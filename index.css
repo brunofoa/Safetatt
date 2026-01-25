@@ -1,0 +1,47 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    @apply bg-gray-50 text-gray-900 transition-colors duration-300;
+  }
+
+  .dark body {
+    @apply bg-zinc-950 text-zinc-50;
+  }
+}
+
+@layer utilities {
+  .btn-gradient {
+    background: linear-gradient(135deg, #92FFAD 0%, #5CDFF0 100%);
+  }
+
+  .bg-grid {
+    background-size: 40px 40px;
+    background-image: radial-gradient(circle, #00000008 1px, transparent 1px);
+  }
+
+  .dark .bg-grid {
+    background-image: radial-gradient(circle, #ffffff08 1px, transparent 1px);
+  }
+
+  .header-gradient {
+    background: linear-gradient(90deg, #000000 0%, #333333 100%);
+  }
+
+  .glass-header {
+    backdrop-filter: blur(8px);
+  }
+
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: #27272a;
+    border-radius: 10px;
+  }
+}

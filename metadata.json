@@ -1,0 +1,7 @@
+{
+  "name": "Safetatt Studio Management",
+  "description": "A comprehensive studio management platform designed for tattoo artists and studio owners, featuring appointment tracking, client history, financial dashboards, and automated workflows.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
