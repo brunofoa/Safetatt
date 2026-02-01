@@ -1,22 +1,22 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AppointmentDetailsModal from '../components/AppointmentDetailsModal';
+import ErrorBoundary from '../components/ErrorBoundary'; // Import ErrorBoundary
+import { useAuth } from '../contexts/AuthContext';
+import { sessionService } from '../services/sessionService';
+import { teamService, TeamMember } from '../services/teamService';
+import { Appointment } from '../types';
+
 
 interface AppointmentsProps {
   onNewAppointment: () => void;
 }
 
-// Helper for dynamic dates
-const getDynamicDate = (daysOffset: number) => {
-  const date = new React.useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + daysOffset);
-    return d;
-  }, [daysOffset]);
-  return date;
-};
-
 // Date formatting helper
-const formatDateDisplay = (date: Date) => {
+const formatDateDisplay = (dateString: string) => {
+  if (!dateString) return '';
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return '-';
+
   const today = new Date();
   const tomorrow = new Date(today);
   tomorrow.setDate(tomorrow.getDate() + 1);
@@ -27,7 +27,9 @@ const formatDateDisplay = (date: Date) => {
 };
 
 // Check if date is in current week
-const isDateInThisWeek = (date: Date) => {
+const isDateInThisWeek = (dateString: string) => {
+  if (!dateString) return false;
+  const date = new Date(dateString);
   const today = new Date();
   const firstDay = new Date(today.setDate(today.getDate() - today.getDay()));
   const lastDay = new Date(today.setDate(today.getDate() - today.getDay() + 6));
@@ -35,140 +37,187 @@ const isDateInThisWeek = (date: Date) => {
 };
 
 const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
-  // Initialize Mock Data with stable dates
-  const [mockData] = useState(() => {
-    const today = new Date();
-    const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-    const past = new Date(today); past.setMonth(past.getMonth() - 1); // 1 month ago
+  const { currentStudio } = useAuth(); // Import useAuth if missing
+  // State for Pagination and Filters
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
-    return [
-      {
-        id: '1',
-        clientName: 'Marcus Vinicius',
-        clientCpf: '123.***.***-00',
-        clientAvatar: 'https://picsum.photos/seed/marcusv/100/100',
-        dateObj: today,
-        time: '14:30',
-        artist: 'Kevin Ferguson',
-        title: 'Blackwork',
-        subtitle: 'Fechamento Braço',
-        status: 'CONFIRMADO',
-        // Extended Details
-        clientPhone: '(11) 98765-4321',
-        clientEmail: 'marcus.v@email.com',
-        value: 'R$ 1.200,00',
-        bodyPart: 'Braço Esquerdo (Fechamento)',
-        size: '25cm x 15cm',
-        style: 'Blackwork Geométrico',
-        session: '2/3',
-        description: 'Continuação do fechamento do braço com padrões geométricos e pontilhismo. Foco na parte interna do antebraço.',
-        anamnesisAlert: 'Nenhuma alergia relatada.',
-        notes: 'Cliente tolera bem sessões longas. Pausa a cada 2 horas.',
-        tattooImage: 'https://picsum.photos/seed/tattoo1/400/400'
-      },
-      {
-        id: '2',
-        clientName: 'Ana Clara Silva',
-        clientCpf: '456.***.***-89',
-        clientAvatar: 'https://picsum.photos/seed/anac/100/100',
-        dateObj: tomorrow,
-        time: '10:00',
-        artist: 'Kevin Ferguson',
-        title: 'Fine Line',
-        subtitle: 'Floral Minimalista',
-        status: 'PENDENTE',
-        // Extended Details
-        clientPhone: '(11) 91234-5678',
-        clientEmail: 'ana.clara@email.com',
-        value: 'R$ 450,00',
-        bodyPart: 'Pulso',
-        size: '5cm x 3cm',
-        style: 'Fine Line',
-        session: '1/1',
-        description: 'Pequeno arranjo floral no pulso. Traços muito finos (agulha 3RL).',
-        anamnesisAlert: 'Pele sensível.',
-        notes: 'Confirmar arte final antes de começar.',
-        tattooImage: 'https://picsum.photos/seed/tattoo2/400/400'
-      },
-      {
-        id: '3',
-        clientName: 'Ricardo Mendes',
-        clientCpf: '789.***.***-12',
-        clientAvatar: 'https://picsum.photos/seed/ricm/100/100',
-        dateObj: past,
-        time: '09:00',
-        artist: 'Kevin Ferguson',
-        title: 'Realismo',
-        subtitle: 'Retrato',
-        status: 'FINALIZADO',
-        // Extended Details
-        clientPhone: '(11) 99887-7665',
-        clientEmail: 'ricardo.m@email.com',
-        value: 'R$ 2.500,00',
-        bodyPart: 'Panturrilha',
-        size: '20cm x 15cm',
-        style: 'Realismo Preto e Cinza',
-        session: '1/1',
-        description: 'Retrato realista de animal de estimação.',
-        anamnesisAlert: 'Nenhuma.',
-        notes: 'Cicatrização da sessão anterior foi perfeita.',
-        tattooImage: 'https://picsum.photos/seed/tattoo3/400/400'
-      },
-    ];
-  });
+  const [page, setPage] = useState(1);
+  const [totalCount, setTotalCount] = useState(0);
+  const LIMIT = 10;
 
   const [searchTerm, setSearchTerm] = useState('');
+  // Debounce search term
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+
   const [showStatusMenu, setShowStatusMenu] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [datePeriod, setDatePeriod] = useState<'all' | 'week'>('all');
 
-  // Modal State
-  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+  // Filter by Professional
+  const [professionals, setProfessionals] = useState<TeamMember[]>([]);
+  const [filterProfessionalId, setFilterProfessionalId] = useState<string | null>(null);
+  const [showProfessionalMenu, setShowProfessionalMenu] = useState(false);
+
+  // Sorting
+  const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc'); // desc = Recente, asc = Antigo
+  const [showSortMenu, setShowSortMenu] = useState(false);
+
+  // Effect to debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+      setPage(1); // Reset to page 1 on search change
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchTerm]);
+
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
 
-  const handleOpenDetails = (appointment: any) => {
+  const fetchAppointments = async () => {
+    if (!currentStudio?.id) return;
+
+    console.log('fetchAppointments called with:', {
+      studioId: currentStudio.id,
+      page,
+      search: debouncedSearch,
+      statusFilter,
+      professionalId: filterProfessionalId,
+      sortOrder
+    });
+
+    setIsLoading(true);
+    try {
+      const { data, count } = await sessionService.getSessionsLight(
+        currentStudio.id,
+        page,
+        LIMIT,
+        {
+          search: debouncedSearch,
+          status: statusFilter || undefined,
+          professionalId: filterProfessionalId || undefined,
+          sortOrder: sortOrder
+        }
+      );
+
+      // Map Session data to Appointment-like structure for the UI
+      const mappedData = data.map((s: any) => {
+        const dateStr = s.performed_date || s.created_at;
+        return {
+          ...s,
+          artist: s.artistName,
+          date: dateStr,
+          start_time: dateStr,
+          end_time: dateStr,
+          time: (() => {
+            const d = new Date(dateStr);
+            return isNaN(d.getTime()) ? '-' : d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+          })(),
+          clientAvatar: s.clientAvatar || '',
+          status: mapSessionStatus(s.status),
+        };
+      });
+
+      setAppointments(mappedData);
+      setTotalCount(count);
+    } catch (error: any) {
+      console.error("Failed to fetch appointments", error);
+      setErrorMsg(error.message || JSON.stringify(error));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const mapSessionStatus = (status: string): string => {
+    const map: Record<string, string> = {
+      'draft': 'Pendente',
+      'pending': 'Pendente',
+      'in_progress': 'Confirmado',
+      'completed': 'Finalizado',
+      'canceled': 'Cancelado'
+    };
+    return map[status] || 'Confirmado';
+  };
+
+  // Fetch when dependencies change
+  useEffect(() => {
+    console.log('useEffect triggered - dependencies:', {
+      studioId: currentStudio?.id,
+      page,
+      debouncedSearch,
+      statusFilter,
+      filterProfessionalId,
+      sortOrder
+    });
+
+    if (currentStudio?.id) {
+      fetchAppointments();
+    }
+  }, [currentStudio?.id, page, debouncedSearch, statusFilter, filterProfessionalId, sortOrder]);
+
+  // Fetch Professionals for Filter
+  useEffect(() => {
+    if (currentStudio?.id) {
+      teamService.getTeamMembers(currentStudio.id).then(setProfessionals);
+    }
+  }, [currentStudio?.id]);
+
+  const handleOpenDetails = async (appointment: Appointment) => {
+    // Optimistic set
     setSelectedAppointment(appointment);
     setIsDetailsModalOpen(true);
+
+    // Lazy load full details if needed is handled inside the Modal by fetching specific session ID
+    // Check AppointmentDetailsModal implementation - confirmed it fetches getSessionById
   };
 
   const getStatusStyles = (status: string) => {
     switch (status) {
-      case 'CONFIRMADO':
+      case 'Confirmado':
         return 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400';
-      case 'PENDENTE':
+      case 'Pendente':
         return 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-400';
-      case 'FINALIZADO':
+      case 'Finalizado':
         return 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400';
       default:
         return 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400';
     }
   };
 
-  const filteredAppointments = mockData.filter(app => {
-    // 1. Search Logic
-    const matchesSearch =
-      app.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      app.clientCpf.includes(searchTerm);
+  // No longer needed client-side filter here
+  // const filteredAppointments = ... 
+  // We use 'appointments' state directly now.
 
-    // 2. Status Logic
-    const matchesStatus = statusFilter ? app.status === statusFilter : true;
-
-    // 3. Date Logic
-    let matchesDate = true;
-    if (datePeriod === 'week') {
-      matchesDate = isDateInThisWeek(app.dateObj);
-    }
-
-    return matchesSearch && matchesStatus && matchesDate;
-  });
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   return (
     <div className="px-6 max-w-7xl mx-auto min-h-screen pb-20">
-      <AppointmentDetailsModal
-        isOpen={isDetailsModalOpen}
-        onClose={() => setIsDetailsModalOpen(false)}
-        appointment={selectedAppointment}
-      />
+
+      {errorMsg && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4">
+          <strong className="font-bold">Erro:</strong>
+          <span className="block sm:inline"> {errorMsg}</span>
+        </div>
+      )}
+      <ErrorBoundary>
+        <AppointmentDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={() => setIsDetailsModalOpen(false)}
+          appointment={selectedAppointment}
+        />
+      </ErrorBoundary>
+
+      {/* We are reusing the parent's logic for New Appointment button, 
+          but we also need to expose a way to refresh the list if that modal saves.
+          If `onNewAppointment` opens a modal in `App.tsx` or similar, we might need a refresh button or mechanism.
+          For now, I'll add a separate Create Modal inside here IF the button is clicked, 
+          OR rely on the prop.
+          Wait, looking at the previous file content, `NewAppointmentModal` wasn't used inside plain `Appointments`.
+          It was imported but unused? No, checking lines...
+          Line 3 imports it but line 173 starts rendering.
+          Line 179 calls `onNewAppointment`. 
+          Let's assume the user uses the button provided.
+       */}
 
       {/* Header Section */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
@@ -190,8 +239,8 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
         <div className="relative flex-1 group">
           <span className="material-icons absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 dark:text-zinc-500 group-focus-within:text-[#5CDFF0] transition-colors">search</span>
           <input
-            className="w-full bg-slate-50 dark:bg-zinc-900/50 border border-gray-200 dark:border-zinc-800 rounded-2xl pl-12 py-3.5 focus:border-transparent focus:ring-2 focus:ring-[#92FFAD] dark:text-zinc-50 outline-none placeholder:text-slate-400 dark:placeholder:text-zinc-600 transition-all"
-            placeholder="Buscar por nome do cliente ou CPF..."
+            className="w-full bg-slate-50 dark:bg-zinc-900/50 border border-[#333333] rounded-2xl pl-12 py-3.5 focus:border-transparent focus:ring-2 focus:ring-[#92FFAD] dark:text-zinc-50 outline-none placeholder:text-slate-400 dark:placeholder:text-zinc-600 transition-all"
+            placeholder="Buscar por nome do cliente..."
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
@@ -199,42 +248,67 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
         </div>
         <div className="flex items-center gap-3">
 
+          {/* Sort Button */}
+          <div className="relative">
+            <button
+              onClick={() => setShowSortMenu(!showSortMenu)}
+              className={`px-6 py-3.5 border rounded-2xl font-bold text-xs tracking-widest flex items-center gap-2 transition-all shadow-sm group 
+              ${sortOrder !== 'desc'
+                  ? 'bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black border-transparent'
+                  : 'bg-white dark:bg-zinc-900 border-[#333333] dark:border-zinc-800 text-black dark:text-zinc-50 hover:bg-gray-50'
+                }`}
+            >
+              <span className="material-icons text-xl">sort</span>
+              Ordenar
+            </button>
+            {showSortMenu && (
+              <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-gray-200 dark:border-zinc-800 overflow-hidden z-20 animate-fade-in-up">
+                <button onClick={() => { setSortOrder('desc'); setShowSortMenu(false); }} className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 dark:text-zinc-50 border-b border-gray-100 dark:border-zinc-800/50 ${sortOrder === 'desc' ? 'text-primary' : ''}`}>Mais Recente</button>
+                <button onClick={() => { setSortOrder('asc'); setShowSortMenu(false); }} className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 dark:text-zinc-50 ${sortOrder === 'asc' ? 'text-primary' : ''}`}>Mais Antigo</button>
+              </div>
+            )}
+          </div>
+
           {/* Filters Button (Status) */}
           <div className="relative">
             <button
               onClick={() => setShowStatusMenu(!showStatusMenu)}
               className={`px-6 py-3.5 border rounded-2xl font-bold text-xs tracking-widest flex items-center gap-2 transition-all shadow-sm group
-                ${statusFilter
+                ${(statusFilter || filterProfessionalId)
                   ? 'bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black border-transparent'
-                  : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 hover:border-transparent hover:bg-gradient-to-r hover:from-[#92FFAD] hover:to-[#5CDFF0] hover:text-black dark:text-zinc-50'
+                  : 'bg-white dark:bg-zinc-900 border-[#333333] dark:border-zinc-800 hover:bg-gray-50 text-black dark:text-zinc-50'
                 }`}
             >
               <span className="material-symbols-outlined text-xl">tune</span>
-              {statusFilter ? statusFilter : 'Filtros'}
-              {statusFilter && <span onClick={(e) => { e.stopPropagation(); setStatusFilter(null); }} className="material-icons text-sm ml-1 hover:text-red-600">close</span>}
+              {statusFilter ? statusFilter : (filterProfessionalId ? 'Filtrado' : 'Filtros')}
+              {(statusFilter || filterProfessionalId) && <span onClick={(e) => { e.stopPropagation(); setStatusFilter(null); setFilterProfessionalId(null); }} className="material-icons text-sm ml-1 hover:text-red-600">close</span>}
             </button>
 
             {showStatusMenu && (
-              <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-gray-200 dark:border-zinc-800 overflow-hidden z-20 animate-fade-in-up">
-                <button onClick={() => { setStatusFilter(null); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 dark:text-zinc-50 border-b border-gray-100 dark:border-zinc-800/50">Todos</button>
-                <button onClick={() => { setStatusFilter('CONFIRMADO'); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-green-600">Confirmados</button>
-                <button onClick={() => { setStatusFilter('PENDENTE'); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-orange-500">Pendentes</button>
-                <button onClick={() => { setStatusFilter('FINALIZADO'); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-blue-500">Finalizados</button>
+              <div className="absolute top-full right-0 mt-2 w-56 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-gray-200 dark:border-zinc-800 overflow-hidden z-20 animate-fade-in-up">
+                <button onClick={() => { setStatusFilter(null); setFilterProfessionalId(null); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 dark:text-zinc-50 border-b border-gray-100 dark:border-zinc-800/50">Todos</button>
+                <button onClick={() => { setStatusFilter('Confirmado'); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-green-600">Confirmados</button>
+                <button onClick={() => { setStatusFilter('Pendente'); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-orange-500">Pendentes</button>
+                <button onClick={() => { setStatusFilter('Finalizado'); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-blue-500">Finalizados</button>
+
+                <div className="border-t border-gray-100 dark:border-zinc-800/50 my-1"></div>
+                <p className="px-4 py-2 text-[10px] uppercase font-bold text-gray-400">Profissional</p>
+                {professionals.map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => { setFilterProfessionalId(p.profile_id); setShowStatusMenu(false); }}
+                    className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 flex items-center gap-2 ${filterProfessionalId === p.profile_id ? 'text-[#5CDFF0]' : 'dark:text-zinc-50'}`}
+                  >
+                    {p.avatar_url && <img src={p.avatar_url} className="w-5 h-5 rounded-full" />}
+                    {p.full_name}
+                  </button>
+                ))}
               </div>
             )}
           </div>
 
-          <button
-            onClick={() => setDatePeriod(prev => prev === 'week' ? 'all' : 'week')}
-            className={`px-6 py-3.5 border rounded-2xl font-bold text-xs tracking-widest flex items-center gap-2 transition-all shadow-sm group
-                ${datePeriod === 'week'
-                ? 'bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black border-transparent'
-                : 'bg-white dark:bg-zinc-900 border-gray-200 dark:border-zinc-800 hover:border-transparent hover:bg-gradient-to-r hover:from-[#92FFAD] hover:to-[#5CDFF0] hover:text-black dark:text-zinc-50'
-              }`}
-          >
-            <span className="material-icons text-xl">calendar_today</span>
-            Esta Semana
-          </button>
+
+          {/* Date Filter removed as per optimization plan */}
         </div>
       </div>
 
@@ -253,23 +327,34 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-zinc-800/30">
-              {filteredAppointments.length > 0 ? (
-                filteredAppointments.map((app) => (
+              {isLoading ? (
+                <tr>
+                  <td colSpan={6} className="px-8 py-12 text-center text-gray-400 dark:text-zinc-400 animate-pulse">
+                    Carregando atendimentos...
+                  </td>
+                </tr>
+              ) : appointments.length > 0 ? (
+                appointments.map((app) => (
                   <tr key={app.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/30 transition-colors group">
                     <td className="px-8 py-5">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 shrink-0">
-                          <img src={app.clientAvatar} alt={app.clientName} className="w-full h-full object-cover" />
+                          {app.clientAvatar ? (
+                            <img src={app.clientAvatar} alt={app.clientName} className="w-full h-full object-cover" />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">
+                              <span className="material-icons text-sm">person</span>
+                            </div>
+                          )}
                         </div>
                         <div>
                           <p className="font-extrabold text-sm text-gray-900 dark:text-zinc-50 tracking-tight">{app.clientName}</p>
-                          <p className="text-[10px] text-gray-500 dark:text-zinc-400 font-medium">{app.clientCpf}</p>
                         </div>
                       </div>
                     </td>
                     <td className="px-6 py-5">
                       <div>
-                        <p className="font-bold text-sm text-gray-900 dark:text-zinc-50">{formatDateDisplay(app.dateObj)}</p>
+                        <p className="font-bold text-sm text-gray-900 dark:text-zinc-50">{formatDateDisplay(app.date)}</p>
                         <p className="text-[10px] text-gray-500 dark:text-zinc-400 font-medium">{app.time}</p>
                       </div>
                     </td>
@@ -279,7 +364,7 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
                     <td className="px-6 py-5">
                       <div>
                         <p className="font-bold text-sm text-gray-900 dark:text-zinc-50">{app.title}</p>
-                        <p className="text-[10px] text-gray-500 dark:text-zinc-400 font-medium italic">{app.subtitle}</p>
+                        <p className="text-[10px] text-gray-500 dark:text-zinc-400 font-medium italic">{app.description?.slice(0, 20)}...</p>
                       </div>
                     </td>
                     <td className="px-6 py-5">
@@ -315,13 +400,22 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
         {/* Footer / Pagination */}
         <div className="px-8 py-5 flex items-center justify-between border-t border-gray-100 dark:border-zinc-800 bg-gray-50/30 dark:bg-zinc-900/50">
           <p className="text-[11px] font-semibold text-gray-400 dark:text-zinc-500 tracking-widest">
-            Mostrando <span className="text-gray-900 dark:text-zinc-50 font-bold">{filteredAppointments.length}</span> de {mockData.length} atendimentos
+            Mostrando <span className="text-gray-900 dark:text-zinc-50 font-bold">{appointments.length}</span> de {totalCount} atendimentos
           </p>
           <div className="flex items-center gap-2">
-            <button className="p-2 rounded-lg border border-gray-200 dark:border-zinc-800 hover:bg-white dark:hover:bg-zinc-800 transition-colors disabled:opacity-50" disabled>
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="p-2 rounded-lg border border-gray-200 dark:border-zinc-800 hover:bg-white dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            >
               <span className="material-icons text-sm">chevron_left</span>
             </button>
-            <button className="p-2 rounded-lg border border-gray-200 dark:border-zinc-800 hover:bg-white dark:hover:bg-zinc-800 transition-colors">
+            <span className="text-xs font-bold text-gray-500 px-2">{page}</span>
+            <button
+              onClick={() => setPage(p => p + 1)}
+              disabled={appointments.length < LIMIT || (page * LIMIT) >= totalCount}
+              className="p-2 rounded-lg border border-gray-200 dark:border-zinc-800 hover:bg-white dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            >
               <span className="material-icons text-sm">chevron_right</span>
             </button>
           </div>

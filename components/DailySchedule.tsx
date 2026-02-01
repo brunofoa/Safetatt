@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Appointment } from '../../types';
+import { Appointment } from '../types';
 
 interface DailyScheduleProps {
     date: Date;
@@ -18,7 +18,10 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({ date, appointments, selec
 
     const artists = Array.from(new Set(appointments.map(a => a.artist)));
 
-    const getArtistColor = (artistName: string) => {
+    const getArtistColor = (appointment: Appointment) => {
+        if (appointment.artistColor) return appointment.artistColor;
+
+        const artistName = appointment.artist;
         const colors: { [key: string]: string } = {
             'Marcus Thorne': '#a855f7', // Purple
             'Elena Vanc': '#3b82f6',    // Blue
@@ -35,7 +38,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({ date, appointments, selec
             <div className="flex flex-col gap-6 mb-10">
                 <div>
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
-                        Agendamentos do Dia
+                        Agendamentos
                     </h2>
                 </div>
 
@@ -74,7 +77,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({ date, appointments, selec
                         <div className="pt-2">
                             <div
                                 className="w-5 h-5 rounded-full border-4 bg-white dark:bg-zinc-900 box-content"
-                                style={{ borderColor: getArtistColor(appointment.artist) }}
+                                style={{ borderColor: getArtistColor(appointment) }}
                             >
                                 {appointment.status === 'Confirmado' && (
                                     <div className="w-full h-full bg-primary rounded-full scale-50"></div>
@@ -110,7 +113,7 @@ const DailySchedule: React.FC<DailyScheduleProps> = ({ date, appointments, selec
                 {appointments.length === 0 && (
                     <div className="text-center py-20 text-gray-400">
                         <span className="material-icons text-4xl mb-2 opacity-50">event_busy</span>
-                        <p>Nenhum agendamento para este dia.</p>
+                        <p>Nenhum agendamento para {formatDate(date)}.</p>
                     </div>
                 )}
 

@@ -15,7 +15,7 @@ const ClientHome: React.FC<ClientHomeProps> = ({ onNavigate }) => {
             <div className="flex flex-col items-center justify-center space-y-4 pt-2 pb-6">
                 <div className="text-center">
                     <h2 className="text-2xl font-bold text-zinc-900">
-                        Olá, {user?.name?.split(' ')[0] || 'Cliente'}
+                        Olá, {user?.user_metadata?.name?.split(' ')[0] || user?.email?.split('@')[0] || 'Cliente'}
                     </h2>
                     <div className="flex items-center justify-center gap-2 mt-1">
                         <span className="text-zinc-500 font-medium">Bem vindo (a) ao</span>

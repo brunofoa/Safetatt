@@ -1,13 +1,69 @@
-
-import React from 'react';
+import React, { useState } from 'react';
+import { clientService } from '../services/clientService';
+import { useAuth } from '../contexts/AuthContext';
 
 interface NewClientModalProps {
     isOpen: boolean;
     onClose: () => void;
+    onSuccess?: () => void;
 }
 
-const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose }) => {
+const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSuccess }) => {
+    const { currentStudio } = useAuth();
+    const [isLoading, setIsLoading] = useState(false);
+    const [formData, setFormData] = useState({
+        firstName: '',
+        lastName: '',
+        birthDate: '',
+        cpf: '',
+        rg: '',
+        profession: '',
+        email: '',
+        phone: '',
+        instagram: '',
+        zipCode: '',
+        street: '',
+        number: '',
+        neighborhood: '',
+        city: '',
+        state: '',
+    });
+
     if (!isOpen) return null;
+
+    const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+        const { name, value } = e.target;
+        setFormData(prev => ({ ...prev, [name]: value }));
+    };
+
+    const handleSave = async () => {
+        if (!formData.firstName || !formData.phone) {
+            alert('Por favor, preencha pelo menos Nome e Telefone.');
+            return;
+        }
+
+        setIsLoading(true);
+        try {
+            const result = await clientService.createClient({ ...formData, studioId: currentStudio?.id });
+            if (result.success) {
+                // Clear form? Or keep it? Let's clear for now or just close
+                setFormData({
+                    firstName: '', lastName: '', birthDate: '', cpf: '', rg: '', profession: '',
+                    email: '', phone: '', instagram: '', zipCode: '', street: '', number: '',
+                    neighborhood: '', city: '', state: ''
+                });
+                onClose();
+                if (onSuccess) onSuccess();
+            } else {
+                alert('Erro ao salvar cliente: ' + (result.error?.message || 'Erro desconhecido'));
+            }
+        } catch (error) {
+            console.error(error);
+            alert('Erro ao processar a solicitação.');
+        } finally {
+            setIsLoading(false);
+        }
+    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
@@ -38,32 +94,73 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose }) => {
 
                                 <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Nome</label>
-                                    <input type="text" placeholder="Primeiro nome" className="input-field" />
+                                    <input
+                                        name="firstName"
+                                        value={formData.firstName}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Primeiro nome"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div className="col-span-2">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Sobrenome</label>
-                                    <input type="text" placeholder="Sobrenome completo" className="input-field" />
+                                    <input
+                                        name="lastName"
+                                        value={formData.lastName}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Sobrenome completo"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Data de Nascimento</label>
-                                    <input type="date" className="input-field" />
+                                    <input
+                                        name="birthDate"
+                                        value={formData.birthDate}
+                                        onChange={handleChange}
+                                        type="date"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">CPF</label>
-                                    <input type="text" placeholder="000.000.000-00" className="input-field" />
+                                    <input
+                                        name="cpf"
+                                        value={formData.cpf}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="000.000.000-00"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">RG / Passaporte</label>
-                                    <input type="text" placeholder="Registro Geral" className="input-field" />
+                                    <input
+                                        name="rg"
+                                        value={formData.rg}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Registro Geral"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div className="col-span-1 md:col-span-3">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Profissão</label>
-                                    <input type="text" placeholder="Ex: Designer Gráfico" className="input-field" />
+                                    <input
+                                        name="profession"
+                                        value={formData.profession}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Ex: Designer Gráfico"
+                                        className="input-field"
+                                    />
                                 </div>
 
                             </div>
@@ -81,17 +178,38 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose }) => {
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">E-mail</label>
-                                    <input type="email" placeholder="email@exemplo.com" className="input-field" />
+                                    <input
+                                        name="email"
+                                        value={formData.email}
+                                        onChange={handleChange}
+                                        type="email"
+                                        placeholder="email@exemplo.com"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Telefone</label>
-                                    <input type="tel" placeholder="(00) 00000-0000" className="input-field" />
+                                    <input
+                                        name="phone"
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        type="tel"
+                                        placeholder="(00) 00000-0000"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Rede Social</label>
-                                    <input type="text" placeholder="@instagram" className="input-field" />
+                                    <input
+                                        name="instagram"
+                                        value={formData.instagram}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="@instagram"
+                                        className="input-field"
+                                    />
                                 </div>
 
                             </div>
@@ -102,40 +220,80 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose }) => {
                         {/* 3. Endereço */}
                         <section>
                             <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
-                                <span className="w-1 h-6 bg-purple-400 rounded-full"></span>
                                 Endereço Completo
                             </h3>
                             <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
 
                                 <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">CEP</label>
-                                    <input type="text" placeholder="00000-000" className="input-field" />
+                                    <input
+                                        name="zipCode"
+                                        value={formData.zipCode}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="00000-000"
+                                        className="input-field"
+                                    />
                                 </div>
 
-                                <div className="col-span-1 md:col-span-3">
+                                <div className="col-span-1 md:col-span-2">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Endereço</label>
-                                    <input type="text" placeholder="Rua, Número, Complemento" className="input-field" />
+                                    <input
+                                        name="street"
+                                        value={formData.street}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Rua, Av."
+                                        className="input-field"
+                                    />
+                                </div>
+
+                                <div className="col-span-1">
+                                    <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Número</label>
+                                    <input
+                                        name="number"
+                                        value={formData.number}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="123"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div className="col-span-2">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Bairro</label>
-                                    <input type="text" placeholder="Bairro" className="input-field" />
+                                    <input
+                                        name="neighborhood"
+                                        value={formData.neighborhood}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Bairro"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Cidade</label>
-                                    <input type="text" placeholder="Cidade" className="input-field" />
+                                    <input
+                                        name="city"
+                                        value={formData.city}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Cidade"
+                                        className="input-field"
+                                    />
                                 </div>
 
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Estado</label>
-                                    <select className="input-field appearance-none">
-                                        <option value="">UF</option>
-                                        <option value="SP">SP</option>
-                                        <option value="RJ">RJ</option>
-                                        <option value="MG">MG</option>
-                                        {/* Add others as needed */}
-                                    </select>
+                                    <input
+                                        name="state"
+                                        value={formData.state}
+                                        onChange={handleChange}
+                                        type="text"
+                                        placeholder="Estado"
+                                        className="input-field"
+                                    />
                                 </div>
 
                             </div>
@@ -148,13 +306,27 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose }) => {
                 <div className="px-8 py-6 border-t border-gray-100 flex items-center justify-end gap-3 bg-gray-50/50 flex-shrink-0">
                     <button
                         onClick={onClose}
-                        className="px-6 py-3 rounded-2xl text-gray-500 font-bold hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                        disabled={isLoading}
+                        className="px-6 py-3 rounded-2xl text-gray-500 font-bold hover:text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-50"
                     >
                         Cancelar
                     </button>
-                    <button className="px-8 py-3 rounded-2xl bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold shadow-lg shadow-[#92FFAD]/20 hover:shadow-[#92FFAD]/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2">
-                        <span className="material-icons text-xl">check</span>
-                        Salvar Cadastro
+                    <button
+                        onClick={handleSave}
+                        disabled={isLoading}
+                        className="px-8 py-3 rounded-2xl bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold shadow-lg shadow-[#92FFAD]/20 hover:shadow-[#92FFAD]/40 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? (
+                            <>
+                                <span className="animate-spin material-icons text-xl">refresh</span>
+                                Salvando...
+                            </>
+                        ) : (
+                            <>
+                                <span className="material-icons text-xl">check</span>
+                                Salvar Cadastro
+                            </>
+                        )}
                     </button>
                 </div>
 
@@ -167,7 +339,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose }) => {
             padding: 14px 16px;
             border-radius: 16px;
             background-color: #F9FAFB;
-            border: 1px solid #e5e7eb;
+            border: 1px solid #333333;
             color: #111827;
             font-weight: 500;
             outline: none;

@@ -19,14 +19,8 @@ const Loyalty: React.FC<LoyaltyProps> = ({ onViewClientProfile }) => {
     const [adjustReason, setAdjustReason] = useState('');
     const [searchTerm, setSearchTerm] = useState('');
 
-    // Mock Client Data - Enhanced
-    const [clients, setClients] = useState([
-        { id: '1', name: 'Bruno Foa', phone: '(11) 99999-9999', balance: 150.00, totalAccumulated: 450.00, lastVisit: '24/02/2024', nextExpiration: '10/02/2026', avatar: 'https://i.pravatar.cc/150?img=11', cpf: '123.456.789-00' }, // Expiring soon
-        { id: '2', name: 'Carla Dias', phone: '(11) 98888-8888', balance: 85.50, totalAccumulated: 120.00, lastVisit: '10/01/2024', nextExpiration: '12/04/2026', avatar: 'https://i.pravatar.cc/150?img=5', cpf: '111.222.333-44' },
-        { id: '3', name: 'Marcus Volt', phone: '(11) 97777-7777', balance: 320.00, totalAccumulated: 890.00, lastVisit: '05/03/2024', nextExpiration: '10/06/2026', avatar: 'https://i.pravatar.cc/150?img=33', cpf: '555.666.777-88' }, // VIP
-        { id: '4', name: 'Elena Vanc', phone: '(11) 96666-6666', balance: 45.00, totalAccumulated: 45.00, lastVisit: '28/02/2024', nextExpiration: '30/03/2026', avatar: 'https://i.pravatar.cc/150?img=47', cpf: '999.888.777-66' },
-        { id: '5', name: 'Ricardo Alvez', phone: '(11) 95555-5555', balance: 200.00, totalAccumulated: 500.00, lastVisit: '15/02/2024', nextExpiration: '15/05/2026', avatar: 'https://i.pravatar.cc/150?img=68', cpf: '000.111.222-33' },
-    ]);
+    // Real Client Data
+    const [clients, setClients] = useState<any[]>([]);
 
     const handleOpenAdjust = (client: any) => {
         setSelectedClientForAdjust(client);
@@ -55,15 +49,13 @@ const Loyalty: React.FC<LoyaltyProps> = ({ onViewClientProfile }) => {
 
             alert(`Ajuste de ${adjustType === 'CREDIT' ? 'Crédito' : 'Débito'} de R$ ${adjustAmount} realizado para ${selectedClientForAdjust.name}.`);
 
-            // Update local state (Optimistic UI)
-            setClients(prev => prev.map(c => {
-                if (c.id === selectedClientForAdjust.id) {
-                    const val = Number(adjustAmount);
-                    const newBalance = adjustType === 'CREDIT' ? c.balance + val : c.balance - val;
-                    return { ...c, balance: newBalance, totalAccumulated: adjustType === 'CREDIT' ? c.totalAccumulated + val : c.totalAccumulated };
-                }
-                return c;
-            }));
+            // Reload Data
+            if (currentStudio?.id) {
+                const updatedClients = await loyaltyService.getClientsWithLoyalty(currentStudio.id);
+                setClients(updatedClients);
+                const updatedMetrics = await loyaltyService.getDashboardMetrics(currentStudio.id);
+                setMetrics(updatedMetrics);
+            }
 
             setIsAdjustModalOpen(false);
         } catch (error) {
@@ -73,16 +65,25 @@ const Loyalty: React.FC<LoyaltyProps> = ({ onViewClientProfile }) => {
     };
 
     useEffect(() => {
-        async function loadMetrics() {
+        async function loadData() {
             if (!session?.user || !currentStudio?.id) return;
-            // setMetrics(await loyaltyService.getDashboardMetrics(currentStudio.id)); // Uncomment when ready
 
-            // For now keep mock or mixed approach if needed, or just let it load
-            // const data = await loyaltyService.getDashboardMetrics(currentStudio.id);
-            // setMetrics(data);
-            setLoading(false);
+            try {
+                // Load Metrics
+                const metricsData = await loyaltyService.getDashboardMetrics(currentStudio.id);
+                setMetrics(metricsData);
+
+                // Load Clients
+                const clientsData = await loyaltyService.getClientsWithLoyalty(currentStudio.id);
+                setClients(clientsData);
+
+            } catch (error) {
+                console.error("Failed to load loyalty data", error);
+            } finally {
+                setLoading(false);
+            }
         }
-        loadMetrics();
+        loadData();
     }, [session, currentStudio]);
 
     // Filtering Logic

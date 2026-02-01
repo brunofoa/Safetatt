@@ -11,18 +11,23 @@ const Marketing: React.FC = () => {
     const [selectedAudience, setSelectedAudience] = useState<string | undefined>(undefined);
 
     const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+    const [metrics, setMetrics] = useState({ birthdayCount: 0, winbackCount: 0, returnCount: 0 });
     const [loading, setLoading] = useState(true);
 
-    const loadCampaigns = async () => {
+    const loadData = async () => {
         if (!currentStudio?.id) return;
         setLoading(true);
-        const data = await marketingService.getCampaigns(currentStudio.id);
-        setCampaigns(data || []);
+        const [campaignsData, metricsData] = await Promise.all([
+            marketingService.getCampaigns(currentStudio.id),
+            marketingService.getDashboardMetrics(currentStudio.id)
+        ]);
+        setCampaigns(campaignsData || []);
+        setMetrics(metricsData);
         setLoading(false);
     };
 
     useEffect(() => {
-        loadCampaigns();
+        loadData();
     }, [currentStudio]);
 
     const handleOpenWizard = (template?: string, audience?: string) => {
@@ -35,7 +40,7 @@ const Marketing: React.FC = () => {
         setIsWizardOpen(false);
         setSelectedTemplate(undefined);
         setSelectedAudience(undefined);
-        loadCampaigns(); // Refresh list after closing wizard (assuming creation happened)
+        loadData(); // Refresh list after closing wizard (assuming creation happened)
     };
 
     const cardStyle = "p-6 rounded-xl border border-[#333333] dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-md hover:border-primary/50 transition-all cursor-pointer group relative overflow-hidden";
@@ -79,48 +84,48 @@ const Marketing: React.FC = () => {
                     {/* Card 1 - Birthdays */}
                     <div className={cardStyle} onClick={() => handleOpenWizard('birthday', 'birthday')}>
                         <div className={`${iconContainerStyle} bg-gray-50 dark:bg-zinc-800`}>
-                            <Gift size={24} weight="duotone" style={{ stroke: 'url(#marketing-grad)', fill: 'url(#marketing-grad)' }} />
+                            <Gift size={32} weight="duotone" color="#333333" />
                         </div>
                         <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-50 mb-2">Aniversariantes</h3>
-                        <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">5 Aniversariantes hoje</p>
-                        <p className="text-xs font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] group-hover:text-[#333333] group-hover:bg-none transition-all flex items-center gap-1 group-hover:underline">
-                            Enviar Parabéns <span className="material-icons text-[10px] text-[#92FFAD] group-hover:text-[#333333]">arrow_forward</span>
+                        <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">{metrics.birthdayCount} Aniversariantes hoje</p>
+                        <p className="text-xs font-bold px-4 py-2 rounded-full bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black transition-all flex items-center gap-2 hover:scale-105 w-fit shadow-sm">
+                            Enviar Parabéns <span className="material-icons text-[14px] text-black">arrow_forward</span>
                         </p>
                     </div>
 
                     {/* Card 2 - Win-back */}
                     <div className={cardStyle} onClick={() => handleOpenWizard('winback', 'winback')}>
                         <div className={`${iconContainerStyle} bg-gray-50 dark:bg-zinc-800`}>
-                            <ClockCounterClockwise size={24} weight="duotone" style={{ stroke: 'url(#marketing-grad)', fill: 'url(#marketing-grad)' }} />
+                            <ClockCounterClockwise size={32} weight="duotone" color="#333333" />
                         </div>
                         <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-50 mb-2">Reconquista</h3>
-                        <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">Recupere clientes inativos (+90 dias)</p>
-                        <p className="text-xs font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] group-hover:text-[#333333] group-hover:bg-none transition-all flex items-center gap-1 group-hover:underline">
-                            Recuperar Clientes <span className="material-icons text-[10px] text-[#92FFAD] group-hover:text-[#333333]">arrow_forward</span>
+                        <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">{metrics.winbackCount} clientes inativos (+90 dias)</p>
+                        <p className="text-xs font-bold px-4 py-2 rounded-full bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black transition-all flex items-center gap-2 hover:scale-105 w-fit shadow-sm">
+                            Recuperar Clientes <span className="material-icons text-[14px] text-black">arrow_forward</span>
                         </p>
                     </div>
 
                     {/* Card 3 - Session Return */}
                     <div className={cardStyle} onClick={() => handleOpenWizard('return', 'return')}>
                         <div className={`${iconContainerStyle} bg-gray-50 dark:bg-zinc-800`}>
-                            <Needle size={24} weight="duotone" style={{ stroke: 'url(#marketing-grad)', fill: 'url(#marketing-grad)' }} />
+                            <Needle size={32} weight="duotone" color="#333333" />
                         </div>
                         <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-50 mb-2">Retorno</h3>
-                        <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">Clientes com sessões em aberto</p>
-                        <p className="text-xs font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] group-hover:text-[#333333] group-hover:bg-none transition-all flex items-center gap-1 group-hover:underline">
-                            Agendar Término <span className="material-icons text-[10px] text-[#92FFAD] group-hover:text-[#333333]">arrow_forward</span>
+                        <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">{metrics.returnCount} Clientes com sessões em aberto</p>
+                        <p className="text-xs font-bold px-4 py-2 rounded-full bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black transition-all flex items-center gap-2 hover:scale-105 w-fit shadow-sm">
+                            Agendar Término <span className="material-icons text-[14px] text-black">arrow_forward</span>
                         </p>
                     </div>
 
                     {/* Card 4 - Custom */}
                     <div className={`${cardStyle} border-dashed border-2`} onClick={() => handleOpenWizard('custom', 'all')}>
                         <div className={`${iconContainerStyle} bg-gray-50 dark:bg-zinc-800`}>
-                            <Sparkle size={24} weight="duotone" style={{ stroke: 'url(#marketing-grad)', fill: 'url(#marketing-grad)' }} />
+                            <Sparkle size={32} weight="duotone" color="#333333" />
                         </div>
                         <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-50 mb-2">Campanha Livre</h3>
                         <p className="text-sm text-gray-500 dark:text-zinc-400 mb-4">Criar novidade ou promoção do zero</p>
-                        <p className="text-xs font-bold bg-clip-text text-transparent bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] group-hover:text-[#333333] group-hover:bg-none transition-all flex items-center gap-1 group-hover:underline">
-                            Começar do Zero <span className="material-icons text-[10px] text-[#92FFAD] group-hover:text-[#333333]">add</span>
+                        <p className="text-xs font-bold px-4 py-2 rounded-full bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black transition-all flex items-center gap-2 hover:scale-105 w-fit shadow-sm">
+                            Começar do Zero <span className="material-icons text-[14px] text-black">add</span>
                         </p>
                     </div>
                 </div>

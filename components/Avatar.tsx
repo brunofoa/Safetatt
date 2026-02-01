@@ -48,7 +48,7 @@ const Avatar: React.FC<AvatarProps> = ({ src, name, className = '', size = 'md',
     if (!src || imageError) {
         return (
             <div
-                className={`flex items-center justify-center font-bold text-white rounded-full ${getColor(name)} ${className}`}
+                className={`flex items-center justify-center font-bold text-white rounded-full bg-[#333333] ${className}`}
                 title={name}
             >
                 {getInitials(name)}

@@ -1,39 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { Client, LoyaltyTransaction } from '../../types';
+import { Client, LoyaltyTransaction } from '../types';
 import { loyaltyService } from '../services/loyaltyService';
+import { clientService } from '../services/clientService';
 import { useAuth } from '../contexts/AuthContext';
+import { sessionService } from '../services/sessionService';
 import Avatar from '../components/Avatar';
+import AppointmentDetailsModal from '../components/AppointmentDetailsModal';
+import ErrorBoundary from '../components/ErrorBoundary'; // Import ErrorBoundary
 
 interface ClientProfileProps {
   clientId: string;
   initialTab?: string;
   onBack: () => void;
 }
-
-const MOCK_CLIENTS: Record<string, Client> = {
-  'c1': {
-    id: 'c1',
-    name: 'Felix Ferguson',
-    email: 'felix.ferguson@email.com',
-    phone: '+55 11 9999-9999',
-    totalVisits: 12,
-    lastVisit: '24 Fev 2024',
-    totalSpent: 1250,
-    avatar: 'https://picsum.photos/seed/felix/100/100', // Still kept as data, Avatar component handles it if it fails or is used
-    address: 'Rua das Flores, 123 - São Paulo, SP',
-    birthDate: '15/05/1992',
-    instagram: '@felix.ferguson',
-    cpf: '123.456.789-00',
-    rg: '12.345.678-9',
-    profession: 'Designer Gráfico',
-    zipCode: '04587-123',
-    street: 'Rua das Flores',
-    number: '123',
-    neighborhood: 'Jardim das Rosas',
-    city: 'São Paulo',
-    state: 'SP'
-  }
-};
 
 const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'dados', onBack }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
@@ -43,17 +22,92 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
   }, [initialTab]);
 
   // Client Data State
-  const [client, setClient] = useState<Client>(MOCK_CLIENTS[clientId] || MOCK_CLIENTS['c1']);
+  const [client, setClient] = useState<Client | null>(null);
+  const [isLimit, setIsLimit] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
-  const [formData, setFormData] = useState<Client>(client);
+  const [formData, setFormData] = useState<Client>({} as Client);
+  const [isLoadingClient, setIsLoadingClient] = useState(true);
+
+  // Fetch Client Data
+  const fetchClient = async () => {
+    if (!clientId) return;
+    setIsLoadingClient(true);
+    const data = await clientService.getClientById(clientId);
+    if (data) {
+      setClient(data);
+      setFormData(data);
+    }
+    setIsLoadingClient(false);
+  };
+
+  useEffect(() => {
+    if (clientId) {
+      fetchClient();
+    }
+  }, [clientId]);
+
+  // Global Refresh Listener
+  useEffect(() => {
+    const handleRefresh = () => fetchClient();
+    window.addEventListener('refreshGlobalData', handleRefresh);
+    return () => window.removeEventListener('refreshGlobalData', handleRefresh);
+  }, [clientId]);
+
 
   // Loyalty State
+  const { currentStudio } = useAuth();
+  const [showBalanceModal, setShowBalanceModal] = useState(false);
+  const [balanceAmount, setBalanceAmount] = useState('');
+  const [balanceDescription, setBalanceDescription] = useState('');
+  const [processingBalance, setProcessingBalance] = useState(false);
+
+  const handleManualBalance = async () => {
+    if (!currentStudio?.id || !clientId || !balanceAmount) return;
+
+    setProcessingBalance(true);
+    try {
+      const amount = parseFloat(balanceAmount.replace(',', '.'));
+      if (isNaN(amount) || amount <= 0) {
+        alert('Valor inválido');
+        setProcessingBalance(false);
+        return;
+      }
+
+      await loyaltyService.createTransaction({
+        studio_id: currentStudio.id,
+        client_id: clientId,
+        type: 'MANUAL_ADJUST',
+        amount: amount,
+        description: balanceDescription || 'Ajuste manual de saldo',
+        expires_at: null
+      });
+
+      // Refresh data
+      const balanceData = await loyaltyService.getClientBalance(clientId);
+      // @ts-ignore
+      setLoyaltyBalance(balanceData);
+      const history = await loyaltyService.getClientHistory(clientId);
+      setLoyaltyHistory(history || []);
+
+      setShowBalanceModal(false);
+      setBalanceAmount('');
+      setBalanceDescription('');
+      alert('Saldo adicionado com sucesso!');
+
+    } catch (error) {
+      console.error(error);
+      alert('Erro ao adicionar saldo');
+    } finally {
+      setProcessingBalance(false);
+    }
+  };
+
   const [loyaltyBalance, setLoyaltyBalance] = useState({ balance: 0, nextExpiration: null as string | null });
   const [loyaltyHistory, setLoyaltyHistory] = useState<any[]>([]);
   const [loadingLoyalty, setLoadingLoyalty] = useState(false);
 
   useEffect(() => {
-    if (activeTab === 'fidelidade') {
+    if (activeTab === 'fidelidade' && clientId) {
       const fetchLoyalty = async () => {
         setLoadingLoyalty(true);
         const balanceData = await loyaltyService.getClientBalance(clientId);
@@ -68,18 +122,152 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
     }
   }, [activeTab, clientId]);
 
+  // Appointments State
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const appointmentsPerPage = 5;
+  const [totalAppointments, setTotalAppointments] = useState(0);
+  const [selectedAppointment, setSelectedAppointment] = useState<any | null>(null);
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+
+  // Financial State
+  const [financialSummary, setFinancialSummary] = useState({ total: 0, count: 0, average: 0 });
+
   // Notes State
   const [newNote, setNewNote] = useState('');
-  const [notes, setNotes] = useState([
-    {
-      id: 1,
-      type: 'warning',
-      title: 'Alerta de Alergia',
-      content: 'O cliente relatou sensibilidade a pigmentos vermelhos em experiências anteriores. Usar tinta hipoalergênica se necessário.',
-      author: 'Kevin',
-      date: '12/01/2024'
+  const [notes, setNotes] = useState<any[]>([]);
+  const [isLoadingNotes, setIsLoadingNotes] = useState(false);
+  const [isSubmittingNote, setIsSubmittingNote] = useState(false);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
+  const [editContent, setEditContent] = useState('');
+
+  // Fetch Appointments & Stats
+  // Fetch Appointments (Paginated)
+  useEffect(() => {
+    if (activeTab === 'atendimentos' && clientId) {
+      const fetchAppointments = async () => {
+        setIsLoadingAppointments(true);
+        try {
+          const { data, count } = await sessionService.getSessionsByClient(
+            clientId,
+            currentPage,
+            appointmentsPerPage // 5
+          );
+          setAppointments(data);
+          setTotalAppointments(count);
+        } catch (error) {
+          console.error("Error fetching client sessions", error);
+        } finally {
+          setIsLoadingAppointments(false);
+        }
+      };
+      fetchAppointments();
     }
-  ]);
+  }, [activeTab, clientId, currentPage]);
+
+  // Fetch Financial Stats (Separate Tab)
+  useEffect(() => {
+    if (activeTab === 'financeiro' && clientId) {
+      const fetchFinancials = async () => {
+        try {
+          const metrics = await sessionService.getClientMetrics(clientId);
+          setFinancialSummary(metrics);
+        } catch (error) {
+          console.error("Error fetching financial metrics", error);
+        }
+      };
+      fetchFinancials();
+    }
+  }, [activeTab, clientId]);
+
+  // Fetch Notes
+  useEffect(() => {
+    if (activeTab === 'observacoes' && clientId) {
+      const fetchNotes = async () => {
+        setIsLoadingNotes(true);
+        const data = await clientService.getNotes(clientId);
+        setNotes(data || []);
+        setIsLoadingNotes(false);
+      };
+      fetchNotes();
+    }
+  }, [activeTab, clientId]);
+
+  const handleAddNote = async () => {
+    if (!newNote.trim() || isSubmittingNote) return;
+
+    setIsSubmittingNote(true);
+    const { data: { user } } = await import('../lib/supabase').then(m => m.supabase.auth.getUser()); // Dynamic import or useAuth
+    // Actually we have useAuth
+
+    // We need author name. Ideally from session or profile.
+    // For now hardcode or use session.user.email?
+    // Step 881 showed useAuth in ClientProfile import.
+
+    const note = await clientService.addNote({
+      clientId,
+      content: newNote,
+      type: 'info',
+      authorName: 'Profissional' // Improve this if possible
+    });
+
+    if (note) {
+      setNotes(prev => [note, ...prev]);
+      setNewNote('');
+    }
+    setIsSubmittingNote(false);
+  };
+
+  const handleEditNote = (note: any) => {
+    setEditingNoteId(note.id);
+    setEditContent(note.content);
+  };
+
+  const handleCancelEdit = () => {
+    setEditingNoteId(null);
+    setEditContent('');
+  };
+
+  const handleSaveEdit = async (noteId: string) => {
+    const res = await clientService.updateNote(noteId, editContent);
+    if (res.success) {
+      setNotes(prev => prev.map(n => n.id === noteId ? { ...n, content: editContent } : n));
+      setEditingNoteId(null);
+      setEditContent('');
+    } else {
+      alert('Erro ao atualizar nota.');
+    }
+  };
+
+  const handleDeleteNote = async (noteId: string) => {
+    if (window.confirm('Tem certeza que deseja excluir esta observação?')) {
+      const res = await clientService.deleteNote(noteId);
+      if (res.success) {
+        setNotes(prev => prev.filter(n => n.id !== noteId));
+      } else {
+        alert('Erro ao excluir nota.');
+      }
+    }
+  };
+
+  const handleUpdateClient = async () => {
+    const res = await clientService.updateClient(clientId, formData);
+    if (res.success) {
+      setClient(formData);
+      setIsEditing(false);
+      alert('Cliente atualizado com sucesso!');
+    } else {
+      alert('Erro ao atualizar cliente.');
+    }
+  };
+
+  // ... (Keep render parts)
+
+  // ... inside return ...
+
+
+
 
   const tabs = [
     { id: 'dados', label: 'Dados do Cliente', icon: 'person' },
@@ -95,12 +283,30 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
   };
 
   const handleSaveClient = () => {
-    setClient(formData);
-    setIsEditing(false);
+    // Call the API
+    handleUpdateClient();
   };
+
+  if (isLoadingClient || !client) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in">
+      {/* Appointment Details Modal */}
+      {/* Appointment Details Modal */}
+      <ErrorBoundary>
+        <AppointmentDetailsModal
+          isOpen={isDetailsModalOpen}
+          onClose={() => setIsDetailsModalOpen(false)}
+          appointment={selectedAppointment}
+        />
+      </ErrorBoundary>
+
       <button onClick={onBack} className="mb-6 flex items-center text-sm font-bold text-gray-500 hover:text-primary transition-colors">
         <span className="material-icons mr-2 text-lg">arrow_back</span>
         Voltar para Clientes
@@ -111,7 +317,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
         <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
           <div className="relative group">
             <Avatar
-              src={client.avatar}
+              src={client.avatar_url && !client.avatar_url.includes('ui-avatars') ? client.avatar_url : null}
               name={client.name}
               className="w-24 h-24 ring-4 ring-white dark:ring-zinc-800 shadow-xl"
             />
@@ -137,7 +343,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
             </div>
           </div>
           <div className="flex gap-3">
-            <button className="bg-[#92FFAD] hover:bg-[#7cefa0] text-black font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2">
+            <button className="bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold py-3 px-6 rounded-xl shadow-lg transition-transform hover:scale-105 flex items-center gap-2">
               <span className="material-icons">chat</span>
               WhatsApp
             </button>
@@ -186,23 +392,23 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Nome Completo</label>
-                    <input disabled={!isEditing} name="name" value={formData.name || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="name" value={formData.name || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Data de Nascimento</label>
-                    <input disabled={!isEditing} name="birthDate" value={formData.birthDate || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="birthDate" value={formData.birthDate || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">CPF</label>
-                    <input disabled={!isEditing} name="cpf" value={formData.cpf || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="cpf" value={formData.cpf || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">RG / Passaporte</label>
-                    <input disabled={!isEditing} name="rg" value={formData.rg || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="rg" value={formData.rg || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div className="md:col-span-2">
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Profissão</label>
-                    <input disabled={!isEditing} name="profession" value={formData.profession || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="profession" value={formData.profession || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                 </div>
 
@@ -212,15 +418,15 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
                   <div className="md:col-span-2">
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">E-mail</label>
-                    <input disabled={!isEditing} name="email" value={formData.email || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="email" value={formData.email || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Telefone</label>
-                    <input disabled={!isEditing} name="phone" value={formData.phone || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="phone" value={formData.phone || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Rede Social</label>
-                    <input disabled={!isEditing} name="instagram" value={formData.instagram || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="instagram" value={formData.instagram || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                 </div>
 
@@ -232,23 +438,23 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">CEP</label>
-                    <input disabled={!isEditing} name="zipCode" value={formData.zipCode || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="zipCode" value={formData.zipCode || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Rua</label>
-                    <input disabled={!isEditing} name="street" value={formData.street || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="street" value={formData.street || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Número</label>
-                    <input disabled={!isEditing} name="number" value={formData.number || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="number" value={formData.number || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Bairro</label>
-                    <input disabled={!isEditing} name="neighborhood" value={formData.neighborhood || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="neighborhood" value={formData.neighborhood || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Cidade</label>
-                    <input disabled={!isEditing} name="city" value={formData.city || ''} onChange={handleInputChange} className="w-full border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none" />
+                    <input disabled={!isEditing} name="city" value={formData.city || ''} onChange={handleInputChange} className="w-full rounded-xl px-4 py-3 font-medium bg-transparent disabled:opacity-75 focus:ring-2 focus:ring-primary outline-none border border-[#333333]" />
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Estado</label>
@@ -282,7 +488,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                       )}
                     </div>
                     <div className="flex flex-col gap-3 w-full md:w-auto">
-                      <button className="bg-white text-black font-bold py-3 px-8 rounded-xl shadow-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2">
+                      <button onClick={() => setShowBalanceModal(true)} className="bg-white text-black font-bold py-3 px-8 rounded-xl shadow-lg hover:bg-gray-100 transition-colors flex items-center justify-center gap-2">
                         <span className="material-icons">add_circle</span>
                         Adicionar Saldo
                       </button>
@@ -322,7 +528,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                                   {transaction.type === 'EARN' ? 'Cashback Recebido' : 'Resgate Utilizado'}
                                 </p>
                                 <p className="text-xs text-gray-500 uppercase tracking-wide">
-                                  {new Date(transaction.created_at).toLocaleDateString()} • Atendimento #{transaction.appointment_id.slice(0, 4)}
+                                  {new Date(transaction.created_at).toLocaleDateString()}
+                                  {transaction.appointment_id ? ` • Atendimento #${transaction.appointment_id.slice(0, 4)}` : ''}
                                 </p>
                               </div>
                             </div>
@@ -334,6 +541,117 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                         ))}
                       </ul>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === 'atendimentos' && (() => {
+              // Server-side pagination is now used
+              const currentAppointments = appointments; // Already paginated
+              const totalPages = Math.ceil(totalAppointments / appointmentsPerPage);
+              const indexOfFirstAppointment = (currentPage - 1) * appointmentsPerPage;
+              const indexOfLastAppointment = indexOfFirstAppointment + currentAppointments.length;
+
+              return (
+                <div className="animate-fade-in">
+                  <div className="flex justify-between items-center mb-6">
+                    <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-50">Histórico de Atendimentos</h2>
+                    <button className="bg-primary text-black font-bold py-2 px-4 rounded-xl text-sm shadow hover:scale-105 transition-transform">
+                      Novo Atendimento
+                    </button>
+                  </div>
+
+                  {isLoadingAppointments ? (
+                    <div className="p-8 text-center text-gray-500">Carregando atendimentos...</div>
+                  ) : appointments.length === 0 ? (
+                    <div className="p-8 text-center text-gray-500 border border-dashed border-gray-300 rounded-xl">Nenhum atendimento realizado ainda.</div>
+                  ) : (
+                    <>
+                      <div className="space-y-4">
+                        {currentAppointments.map((app) => (
+                          <div key={app.id} className="flex flex-col md:flex-row items-center gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl border border-gray-100 dark:border-zinc-800 hover:border-primary/50 transition-colors">
+                            <div className="w-16 h-16 rounded-xl bg-gray-200 dark:bg-zinc-700 flex flex-col items-center justify-center text-gray-500 font-bold">
+                              <span className="text-xl">
+                                {(() => {
+                                  const d = new Date(app.date);
+                                  return isNaN(d.getTime()) ? '-' : d.getDate();
+                                })()}
+                              </span>
+                              <span className="text-xs uppercase">
+                                {(() => {
+                                  const d = new Date(app.date);
+                                  return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('pt-BR', { month: 'short' });
+                                })()}
+                              </span>
+                            </div>
+                            <div className="flex-1 text-center md:text-left">
+                              <h3 className="font-bold text-gray-900 dark:text-zinc-50">{app.service}</h3>
+                              <p className="text-sm text-gray-500">{app.professional} • {app.status}</p>
+                            </div>
+                            <div className="font-bold text-gray-900 dark:text-zinc-50">
+                              R$ {Number(app.price).toFixed(2)}
+                            </div>
+                            <button
+                              onClick={() => {
+                                setSelectedAppointment(app);
+                                setIsDetailsModalOpen(true);
+                              }}
+                              className="p-2 text-gray-400 hover:text-primary transition-colors"
+                            >
+                              <span className="material-icons">visibility</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Pagination Controls */}
+                      {totalPages > 1 && (
+                        <div className="mt-6 flex items-center justify-between border-t border-gray-100 dark:border-zinc-800 pt-6">
+                          <p className="text-sm font-semibold text-gray-500 dark:text-zinc-400">
+                            Mostrando <span className="text-gray-900 dark:text-zinc-50 font-bold">{indexOfFirstAppointment + 1}</span> a <span className="text-gray-900 dark:text-zinc-50 font-bold">{indexOfFirstAppointment + currentAppointments.length}</span> de <span className="text-gray-900 dark:text-zinc-50 font-bold">{totalAppointments}</span> atendimentos
+                          </p>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                              disabled={currentPage === 1}
+                              className="p-2 rounded-lg border border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="material-icons text-sm">chevron_left</span>
+                            </button>
+                            <span className="text-sm font-bold text-gray-700 dark:text-zinc-300 px-3">
+                              Página {currentPage} de {totalPages}
+                            </span>
+                            <button
+                              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                              disabled={currentPage === totalPages}
+                              className="p-2 rounded-lg border border-gray-200 dark:border-zinc-800 hover:bg-gray-50 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <span className="material-icons text-sm">chevron_right</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              );
+            })()}
+
+            {activeTab === 'financeiro' && (
+              <div className="animate-fade-in space-y-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="bg-green-50 dark:bg-green-900/10 p-6 rounded-2xl border border-green-100 dark:border-green-900/20">
+                    <p className="text-sm text-green-600 dark:text-green-400 font-bold mb-1 uppercase">Total Gasto</p>
+                    <h3 className="text-3xl font-extrabold text-green-700 dark:text-green-300">R$ {financialSummary.total.toFixed(2)}</h3>
+                  </div>
+                  <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-2xl border border-blue-100 dark:border-blue-900/20">
+                    <p className="text-sm text-blue-600 dark:text-blue-400 font-bold mb-1 uppercase">Ticket Médio</p>
+                    <h3 className="text-3xl font-extrabold text-blue-700 dark:text-blue-300">R$ {financialSummary.average.toFixed(2)}</h3>
+                  </div>
+                  <div className="bg-purple-50 dark:bg-purple-900/10 p-6 rounded-2xl border border-purple-100 dark:border-purple-900/20">
+                    <p className="text-sm text-purple-600 dark:text-purple-400 font-bold mb-1 uppercase">Atendimentos Pagos</p>
+                    <h3 className="text-3xl font-extrabold text-purple-700 dark:text-purple-300">{financialSummary.count}</h3>
                   </div>
                 </div>
               </div>
@@ -353,43 +671,122 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                     ></textarea>
                     <div className="flex justify-between items-center mt-4 pt-4 border-t border-gray-200 dark:border-zinc-700">
                       <div className="flex gap-2">
-                        <button className="p-1 text-gray-400 hover:text-yellow-500 transition-colors" title="Alerta"><span className="material-icons">warning</span></button>
-                        <button className="p-1 text-gray-400 hover:text-blue-500 transition-colors" title="Informação"><span className="material-icons">info</span></button>
+                        {/* Icons */}
                       </div>
-                      <button className="bg-[#333333] hover:bg-black text-white font-bold py-2 px-6 rounded-lg text-sm shadow-md transition-all">
-                        Adicionar
+                      <button
+                        onClick={handleAddNote}
+                        disabled={!newNote.trim() || isSubmittingNote}
+                        className="bg-[#333333] hover:bg-black text-white font-bold py-2 px-6 rounded-lg text-sm shadow-md transition-all disabled:opacity-50"
+                      >
+                        {isSubmittingNote ? 'Adicionando...' : 'Adicionar'}
                       </button>
                     </div>
                   </div>
                 </div>
 
                 <div className="space-y-4">
-                  {notes.map(note => (
-                    <div key={note.id} className={`p-4 rounded-xl border-l-4 ${note.type === 'warning' ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/10' : 'border-blue-500 bg-blue-50 dark:bg-blue-900/10'}`}>
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className={`font-bold ${note.type === 'warning' ? 'text-yellow-700 dark:text-yellow-500' : 'text-blue-700 dark:text-blue-500'}`}>
-                          {note.title}
-                        </h4>
-                        <span className="text-[10px] text-gray-400 uppercase font-bold">{note.date}</span>
+                  {isLoadingNotes ? (
+                    <p className="text-center text-gray-400">Carregando...</p>
+                  ) : notes.length === 0 ? (
+                    <p className="text-center text-gray-400">Nenhuma observação.</p>
+                  ) : (
+                    notes.map(note => (
+                      <div key={note.id} className={`p-4 rounded-xl border-l-4 ${note.type === 'warning' ? 'border-yellow-500 bg-yellow-50 dark:bg-yellow-900/10' : 'border-blue-500 bg-blue-50 dark:bg-blue-900/10'}`}>
+                        {editingNoteId === note.id ? (
+                          // Edit Mode
+                          <div>
+                            <textarea
+                              className="w-full p-2 border rounded bg-white dark:bg-zinc-900 text-gray-900 dark:text-zinc-50 mb-2"
+                              rows={3}
+                              value={editContent}
+                              onChange={(e) => setEditContent(e.target.value)}
+                            />
+                            <div className="flex justify-end gap-2">
+                              <button onClick={handleCancelEdit} className="text-gray-500 text-sm hover:underline">Cancelar</button>
+                              <button onClick={() => handleSaveEdit(note.id)} className="bg-primary text-black px-3 py-1 rounded text-sm font-bold">Salvar</button>
+                            </div>
+                          </div>
+                        ) : (
+                          // View Mode
+                          <>
+                            <div className="flex justify-between items-start mb-2">
+                              <h4 className={`font-bold ${note.type === 'warning' ? 'text-yellow-700 dark:text-yellow-500' : 'text-blue-700 dark:text-blue-500'}`}>
+                                {note.type === 'warning' ? 'Alerta' : 'Observação'}
+                              </h4>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] text-gray-400 uppercase font-bold mr-2">{new Date(note.created_at).toLocaleDateString()}</span>
+                                <button onClick={() => handleEditNote(note)} className="text-gray-400 hover:text-primary transition-colors">
+                                  <span className="material-icons text-sm">edit</span>
+                                </button>
+                                <button onClick={() => handleDeleteNote(note.id)} className="text-gray-400 hover:text-red-500 transition-colors">
+                                  <span className="material-icons text-sm">delete</span>
+                                </button>
+                              </div>
+                            </div>
+                            <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-2">{note.content}</p>
+                            <p className="text-xs text-gray-400 italic">Por: {note.author_name || 'Sistema'}</p>
+                          </>
+                        )}
                       </div>
-                      <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed mb-2">{note.content}</p>
-                      <p className="text-xs text-gray-400 italic">Por: {note.author}</p>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
-              </div>
-            )}
-
-            {(activeTab !== 'dados' && activeTab !== 'fidelidade' && activeTab !== 'observacoes') && (
-              <div className="flex flex-col items-center justify-center py-20 text-gray-400">
-                <span className="material-icons text-5xl mb-4 opacity-20">construction</span>
-                <p>Em desenvolvimento...</p>
               </div>
             )}
 
           </div>
         </div>
       </div>
+
+      {/* Balance Modal */}
+      {showBalanceModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 w-full max-w-md m-4 shadow-2xl border border-gray-200 dark:border-zinc-800">
+            <h3 className="text-2xl font-extrabold text-gray-900 dark:text-zinc-50 mb-6">Adicionar Saldo Manual</h3>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Valor (R$)</label>
+                <input
+                  autoFocus
+                  type="number"
+                  placeholder="0.00"
+                  value={balanceAmount}
+                  onChange={(e) => setBalanceAmount(e.target.value)}
+                  className="w-full text-2xl font-bold bg-transparent border-b-2 border-primary outline-none py-2 text-gray-900 dark:text-zinc-50 placeholder-gray-300"
+                />
+              </div>
+
+              <div>
+                <label className="text-xs font-bold text-gray-400 mb-1 block uppercase">Motivo / Descrição</label>
+                <input
+                  type="text"
+                  placeholder="Ex: Ajuste, Bônus..."
+                  value={balanceDescription}
+                  onChange={(e) => setBalanceDescription(e.target.value)}
+                  className="w-full rounded-xl px-4 py-3 font-medium bg-gray-50 dark:bg-zinc-800 outline-none border border-transparent focus:border-primary transition-colors text-gray-900 dark:text-zinc-50"
+                />
+              </div>
+            </div>
+
+            <div className="flex gap-3 mt-8">
+              <button
+                onClick={() => setShowBalanceModal(false)}
+                className="flex-1 py-3 font-bold text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleManualBalance}
+                disabled={processingBalance || !balanceAmount}
+                className="flex-1 bg-primary text-black font-bold py-3 rounded-xl shadow-lg hover:scale-105 transition-transform disabled:opacity-50 disabled:scale-100"
+              >
+                {processingBalance ? 'Processando...' : 'Confirmar'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

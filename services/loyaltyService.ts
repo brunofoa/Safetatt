@@ -1,8 +1,57 @@
 import { supabase } from '../lib/supabase';
-import { LoyaltyConfig, LoyaltyTransaction } from '../../types';
+import { LoyaltyConfig, LoyaltyTransaction } from '../types';
 
 export const loyaltyService = {
-    // --- CONFIGURATION ---
+    // --- CONFIGURATION (NEW TABLE: loyalty_settings) ---
+    async getSettings(studioId: string): Promise<LoyaltyConfig | null> {
+        const { data, error } = await supabase
+            .from('loyalty_settings')
+            .select('*')
+            .eq('studio_id', studioId)
+            .single();
+
+        if (error) {
+            // It's okay if not found, we return null so UI uses defaults
+            if (error.code !== 'PGRST116') {
+                console.error('Error fetching loyalty settings:', error);
+            }
+            return null;
+        }
+
+        // Map snake_case DB to camelCase Interface
+        return {
+            isActive: data.is_active,
+            rewardType: data.reward_type,
+            rewardValue: Number(data.reward_value),
+            validityDays: Number(data.points_expiration_days),
+            minSpentToUse: Number(data.minimum_purchase_amount),
+            maxUsageLimit: 100 // Default or add column if needed. The request didn't specify this one, keeping default.
+        };
+    },
+
+    async upsertSettings(studioId: string, config: LoyaltyConfig): Promise<{ success: boolean; error?: any }> {
+        const dbData = {
+            studio_id: studioId,
+            is_active: config.isActive,
+            reward_type: config.rewardType,
+            reward_value: config.rewardValue,
+            points_expiration_days: config.validityDays,
+            minimum_purchase_amount: config.minSpentToUse,
+            updated_at: new Date()
+        };
+
+        const { error } = await supabase
+            .from('loyalty_settings')
+            .upsert(dbData, { onConflict: 'studio_id' });
+
+        if (error) {
+            console.error('Error saving loyalty settings:', error);
+            return { success: false, error };
+        }
+        return { success: true };
+    },
+
+    // --- LEGACY CONFIGURATION (Keeping for reference if needed, but unused for new feature) ---
     async getStudioConfig(studioId: string): Promise<LoyaltyConfig | null> {
         const { data, error } = await supabase
             .from('studios')
@@ -56,18 +105,22 @@ export const loyaltyService = {
 
         // Simple aggregation
         data.forEach((t: any) => {
-            if (t.type === 'CREDIT' || t.type === 'MANUAL_ADJUST') { // Assuming Manual Adjust is usually credit, or handle signed
+            // Map DB columns to logical names
+            const type = t.transaction_type;
+            const amount = Number(t.points_amount || 0);
+
+            if (type === 'CREDIT' || type === 'MANUAL_ADJUST') { // Assuming Manual Adjust is usually credit
                 // Check if expired
-                if (t.expires_at && new Date(t.expires_at) < now && t.type !== 'MANUAL_ADJUST') return;
-                balance += Number(t.amount);
-            } else if (t.type === 'DEBIT') {
-                balance -= Number(t.amount);
+                if (t.expires_at && new Date(t.expires_at) < now && type !== 'MANUAL_ADJUST') return;
+                balance += amount;
+            } else if (type === 'DEBIT') {
+                balance -= amount;
             }
         });
 
         // Find next expiration date of valid credits (simplified)
         const activeCredits = data.filter((t: any) =>
-            (t.type === 'CREDIT') &&
+            (t.transaction_type === 'CREDIT') &&
             t.expires_at &&
             new Date(t.expires_at) > now
         );
@@ -82,9 +135,20 @@ export const loyaltyService = {
     },
 
     async createTransaction(transaction: Omit<LoyaltyTransaction, 'id' | 'created_at'>): Promise<LoyaltyTransaction | null> {
+        // Map Frontend Interface (amount, type) to DB Columns (points_amount, transaction_type)
+        const dbTransaction = {
+            studio_id: transaction.studio_id,
+            client_id: transaction.client_id,
+            appointment_id: transaction.appointment_id,
+            transaction_type: transaction.type, // Map
+            points_amount: transaction.amount,  // Map
+            description: transaction.description,
+            expires_at: transaction.expires_at
+        };
+
         const { data, error } = await supabase
             .from('loyalty_transactions')
-            .insert([transaction])
+            .insert([dbTransaction])
             .select()
             .single();
 
@@ -92,7 +156,13 @@ export const loyaltyService = {
             console.error('Error creating transaction:', error);
             return null;
         }
-        return data;
+
+        // Map back to interface
+        return {
+            ...data,
+            type: data.transaction_type,
+            amount: data.points_amount
+        };
     },
 
     // --- DASHBOARD DATA ---
@@ -113,8 +183,10 @@ export const loyaltyService = {
         thirtyDaysFromNow.setDate(now.getDate() + 30);
 
         data.forEach((t: any) => {
-            const amount = Number(t.amount);
-            if (t.type === 'CREDIT' || t.type === 'MANUAL_ADJUST') {
+            const amount = Number(t.points_amount || 0);
+            const type = t.transaction_type;
+
+            if (type === 'CREDIT' || type === 'MANUAL_ADJUST') {
                 totalLiability += amount;
                 if (t.expires_at) {
                     const expDate = new Date(t.expires_at);
@@ -122,7 +194,7 @@ export const loyaltyService = {
                         expiringSoon += amount;
                     }
                 }
-            } else if (t.type === 'DEBIT') {
+            } else if (type === 'DEBIT') {
                 totalLiability -= amount;
                 if (new Date(t.created_at) >= firstDayOfMonth) {
                     redeemedMonth += amount;
@@ -140,21 +212,25 @@ export const loyaltyService = {
             .eq('client_id', clientId)
             .order('created_at', { ascending: false });
 
-        return data || [];
+        if (error || !data) return [];
+
+        // Map DB to Interface
+        return data.map((t: any) => {
+            let type = 'USE';
+            if (t.transaction_type === 'CREDIT' || t.transaction_type === 'MANUAL_ADJUST') {
+                type = 'EARN';
+            }
+
+            return {
+                ...t,
+                type: type,
+                amount: Number(t.points_amount) // IMPORTANT: Cast to Number for frontend .toFixed() compatibility
+            };
+        });
     },
 
     async getClientsWithLoyalty(studioId: string) {
         // In a real app, this would be a JOIN or efficient query.
-        // For MVP, we fetch all clients (profiles) and their transactions, then aggregate.
-        // Or we might have a materialized view.
-
-        // 1. Fetch all clients associated with studio (mocked for now as we don't have linking table)
-        // We will just fetch profiles that have at least one transaction for now? 
-        // Or if we have a Clients table. The implementation in Clients.tsx uses Mock Data.
-        // We need to fetch 'real' clients if we are moving to Supabase, OR mix mock clients with real loyalty data.
-
-        // Strategy: Fetch transactions, group by client_id, calculate balances. 
-        // Then merge with basic client info (mocked or fetched).
 
         const { data: transactions, error } = await supabase
             .from('loyalty_transactions')
@@ -170,9 +246,12 @@ export const loyaltyService = {
                 clientBalances[t.client_id] = { balance: 0, totalAccumulated: 0, lastTransaction: null, nextExpiration: null };
             }
             const c = clientBalances[t.client_id];
-            const amount = Number(t.amount);
 
-            if (t.type === 'CREDIT' || t.type === 'MANUAL_ADJUST') {
+            // Map columns
+            const amount = Number(t.points_amount || 0);
+            const type = t.transaction_type;
+
+            if (type === 'CREDIT' || type === 'MANUAL_ADJUST') {
                 c.balance += amount;
                 c.totalAccumulated += amount;
 
@@ -185,7 +264,7 @@ export const loyaltyService = {
                     }
                 }
 
-            } else if (t.type === 'DEBIT') {
+            } else if (type === 'DEBIT') {
                 c.balance -= amount;
             }
 
@@ -195,26 +274,22 @@ export const loyaltyService = {
         });
 
         // Map to array and fill details
-        // Note: In real app we would join with 'profiles' table.
-        // For now we will return ID and calculated data, UI might need to fetch names or use existing cache.
-        // We will try to fetch profiles for these IDs if possible.
-
         const clientIds = Object.keys(clientBalances);
-        let profilesMap: Record<string, any> = {};
+        let clientsMap: Record<string, any> = {};
 
         if (clientIds.length > 0) {
-            const { data: profiles } = await supabase
-                .from('profiles')
+            const { data: clients } = await supabase
+                .from('clients')
                 .select('*')
                 .in('id', clientIds);
 
-            if (profiles) {
-                profiles.forEach(p => profilesMap[p.id] = p);
+            if (clients) {
+                clients.forEach(c => clientsMap[c.id] = c);
             }
         }
 
         return clientIds.map(id => {
-            const profile = profilesMap[id] || { full_name: 'Cliente Desconhecido', phone: '', avatar_url: '' };
+            const client = clientsMap[id] || { full_name: 'Cliente Desconhecido', phone: '', avatar: '' };
             const data = clientBalances[id];
 
             // Format dates
@@ -223,9 +298,10 @@ export const loyaltyService = {
 
             return {
                 id,
-                name: profile.full_name || 'Sem Nome',
-                phone: profile.phone || '-',
-                avatar: profile.avatar_url || `https://ui-avatars.com/api/?name=${profile.full_name || 'C'}`,
+                name: client.full_name || 'Sem Nome',
+                phone: client.phone || '-',
+                avatar: client.avatar || `https://ui-avatars.com/api/?name=${client.full_name || 'C'}`,
+                cpf: client.cpf,
                 balance: Math.max(0, data.balance),
                 totalAccumulated: data.totalAccumulated,
                 lastVisit: lastVisit,

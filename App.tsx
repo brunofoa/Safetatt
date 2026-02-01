@@ -1,6 +1,9 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
+import { Routes, Route } from 'react-router-dom';
 import { Screen, User, Studio, Role } from './types';
+import ClientSelfRegistration from './views/public/ClientSelfRegistration';
+import UpdatePassword from './views/UpdatePassword';
 import Login from './views/Login';
 import StudioSelection from './views/StudioSelection';
 import Dashboard from './views/Dashboard';
@@ -20,6 +23,10 @@ import ClientCare from './views/client/ClientCare';
 import ClientHistory from './views/client/ClientHistory';
 import ClientFinancial from './views/client/ClientFinancial';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import AdminLayout from './layouts/AdminLayout';
+import AdminDashboard from './views/admin/AdminDashboard';
+import AdminStudios from './views/admin/AdminStudios';
+import NewStudioForm from './views/admin/NewStudioForm';
 
 // Temporary adapter to match local User type with Supabase User
 const ADAPTER_USER: User = {
@@ -83,13 +90,24 @@ const AppContent: React.FC = () => {
     role: sessionRole || 'Master' // Fallback for display
   };
 
+  // Check if we are in an Admin Screen
+  const isAdminScreen = currentScreen === Screen.ADMIN_DASHBOARD || currentScreen === Screen.ADMIN_STUDIOS || currentScreen === Screen.ADMIN_NEW_STUDIO;
+
   // If no session is selected, show Studio Selection (The Lobby)
-  if (!sessionRole || !currentStudio) {
-    return <StudioSelection user={appUser} onSelectStudio={handleSelectStudio} />;
+  // BUT allow bypass if we are trying to go to Admin Screens
+  if ((!sessionRole || !currentStudio) && !isAdminScreen) {
+    return (
+      <StudioSelection
+        user={appUser}
+        onSelectStudio={handleSelectStudio}
+        onEnterAdmin={() => setCurrentScreen(Screen.ADMIN_DASHBOARD)}
+      />
+    );
   }
 
   // Render Client Layout
   if (sessionRole === 'CLIENT') {
+    // ... (existing client render)
     const renderClientScreen = () => {
       switch (currentScreen) {
         case Screen.CLIENT_HOME:
@@ -101,7 +119,7 @@ const AppContent: React.FC = () => {
         case Screen.CLIENT_FINANCIAL:
           return <ClientFinancial />;
         default:
-          return <ClientHome />;
+          return <ClientHome onNavigate={navigate} />;
       }
     };
 
@@ -109,6 +127,28 @@ const AppContent: React.FC = () => {
       <ClientLayout currentScreen={currentScreen} onNavigate={navigate}>
         {renderClientScreen()}
       </ClientLayout>
+    );
+  }
+
+  // Render Admin Layout
+  if (currentScreen === Screen.ADMIN_DASHBOARD || currentScreen === Screen.ADMIN_STUDIOS || currentScreen === Screen.ADMIN_NEW_STUDIO) {
+    const renderAdminScreen = () => {
+      switch (currentScreen) {
+        case Screen.ADMIN_DASHBOARD:
+          return <AdminDashboard />;
+        case Screen.ADMIN_STUDIOS:
+          return <AdminStudios onNewStudio={() => navigate(Screen.ADMIN_NEW_STUDIO)} />;
+        case Screen.ADMIN_NEW_STUDIO:
+          return <NewStudioForm onCancel={() => navigate(Screen.ADMIN_STUDIOS)} onSuccess={() => navigate(Screen.ADMIN_STUDIOS)} />;
+        default:
+          return <AdminDashboard />;
+      }
+    };
+
+    return (
+      <AdminLayout currentScreen={currentScreen} onNavigate={navigate}>
+        {renderAdminScreen()}
+      </AdminLayout>
     );
   }
 
@@ -145,10 +185,16 @@ const AppContent: React.FC = () => {
   );
 };
 
+
+
 const App: React.FC = () => {
   return (
     <AuthProvider>
-      <AppContent />
+      <Routes>
+        <Route path="/cadastro/:slug" element={<ClientSelfRegistration />} />
+        <Route path="/update-password" element={<UpdatePassword />} />
+        <Route path="/*" element={<AppContent />} />
+      </Routes>
     </AuthProvider>
   );
 };

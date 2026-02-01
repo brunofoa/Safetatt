@@ -39,11 +39,11 @@ const ClientLayout: React.FC<ClientLayoutProps> = ({ children, currentScreen, on
 
                     {/* User Avatar (Profile shortcut) */}
                     <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center overflow-hidden border border-white/10">
-                        {user?.avatar ? (
-                            <img src={user.avatar} alt="User" className="w-full h-full object-cover" />
+                        {user?.user_metadata?.avatar_url ? (
+                            <img src={user.user_metadata.avatar_url} alt="User" className="w-full h-full object-cover" />
                         ) : (
                             <span className="font-bold text-xs text-zinc-400">
-                                {user?.name?.charAt(0) || 'U'}
+                                {user?.user_metadata?.name?.charAt(0) || user?.email?.charAt(0) || 'U'}
                             </span>
                         )}
                     </div>

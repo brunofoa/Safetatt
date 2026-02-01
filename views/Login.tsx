@@ -6,9 +6,10 @@ interface LoginProps {
 }
 
 const Login: React.FC<LoginProps> = ({ onLogin }) => {
-  const { signInWithPassword, signUpWithPassword } = useAuth();
+  const { signInWithPassword, signUpWithPassword, resetPassword } = useAuth();
   const [showPassword, setShowPassword] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
+  const [isRecovery, setIsRecovery] = useState(false);
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -24,7 +25,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
     setError(null);
     setSuccessMessage(null);
 
-    if (isRegistering) {
+    if (isRecovery) {
+      const { error: resetError } = await resetPassword(email);
+      if (resetError) {
+        setError(resetError.message);
+      } else {
+        setSuccessMessage("Email de recuperação enviado! Verifique sua caixa de entrada.");
+      }
+      setLoading(false);
+    } else if (isRegistering) {
       if (password !== confirmPassword) {
         setError("As senhas não coincidem.");
         setLoading(false);
@@ -60,6 +69,15 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const toggleMode = (e: React.MouseEvent) => {
     e.preventDefault();
     setIsRegistering(!isRegistering);
+    setIsRecovery(false);
+    setError(null);
+    setSuccessMessage(null);
+  };
+
+  const toggleRecovery = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setIsRecovery(!isRecovery);
+    setIsRegistering(false);
     setError(null);
     setSuccessMessage(null);
   };
@@ -84,10 +102,10 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
         <div className="p-8">
           <div className="text-center mb-8">
             <h1 className="text-2xl font-bold text-gray-900 mb-1">
-              {isRegistering ? 'Crie sua conta' : 'Bem-vindo de volta'}
+              {isRecovery ? 'Recuperar Senha' : isRegistering ? 'Crie sua conta' : 'Bem-vindo de volta'}
             </h1>
             <p className="text-sm text-gray-500">
-              {isRegistering ? 'Preencha seus dados para começar.' : 'Acesse sua conta para continuar.'}
+              {isRecovery ? 'Digite seu email para receber o link de recuperação.' : isRegistering ? 'Preencha seus dados para começar.' : 'Acesse sua conta para continuar.'}
             </p>
           </div>
 
@@ -115,26 +133,35 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-bold text-zinc-900 ml-1">Senha</label>
-              <div className="relative">
-                <input
-                  className="w-full bg-transparent border border-[#333333] rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5CDFF0] focus:border-transparent outline-none transition-all text-gray-900 placeholder:text-gray-400 font-medium"
-                  placeholder="••••••••"
-                  type={showPassword ? 'text' : 'password'}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  disabled={loading}
-                />
-                <button
-                  className="material-icons absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg"
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                >
-                  {showPassword ? 'visibility' : 'visibility_off'}
-                </button>
+            {!isRecovery && (
+              <div className="space-y-1">
+                <div className="flex justify-between items-center">
+                  <label className="text-xs font-bold text-zinc-900 ml-1">Senha</label>
+                  {!isRegistering && (
+                    <button onClick={toggleRecovery} className="text-xs text-[#059669] font-bold hover:underline" type="button">
+                      Esqueceu a senha?
+                    </button>
+                  )}
+                </div>
+                <div className="relative">
+                  <input
+                    className="w-full bg-transparent border border-[#333333] rounded-xl py-3 px-4 focus:ring-2 focus:ring-[#5CDFF0] focus:border-transparent outline-none transition-all text-gray-900 placeholder:text-gray-400 font-medium"
+                    placeholder="••••••••"
+                    type={showPassword ? 'text' : 'password'}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    disabled={loading}
+                  />
+                  <button
+                    className="material-icons absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 text-lg"
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                  >
+                    {showPassword ? 'visibility' : 'visibility_off'}
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {isRegistering && (
               <div className="space-y-1">
@@ -160,7 +187,7 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 {loading ? (
                   <span className="w-5 h-5 border-2 border-gray-900 border-t-transparent rounded-full animate-spin"></span>
                 ) : (
-                  <span>{isRegistering ? 'Criar Conta' : 'Entrar'}</span>
+                  <span>{isRecovery ? 'Enviar Link' : isRegistering ? 'Criar Conta' : 'Entrar'}</span>
                 )}
               </button>
             </div>
@@ -169,9 +196,9 @@ const Login: React.FC<LoginProps> = ({ onLogin }) => {
           {/* Rodapé */}
           <div className="mt-8 text-center">
             <p className="text-sm text-gray-500">
-              {isRegistering ? 'Já tem uma conta?' : 'Não tem conta?'}
-              <button onClick={toggleMode} className="ml-1 text-[#059669] font-bold hover:underline">
-                {isRegistering ? 'Fazer Login' : 'Cadastre-se'}
+              {isRecovery ? 'Lembrou sua senha?' : isRegistering ? 'Já tem uma conta?' : 'Não tem conta?'}
+              <button onClick={isRecovery ? toggleRecovery : toggleMode} className="ml-1 text-[#059669] font-bold hover:underline">
+                {isRecovery ? 'Voltar para Login' : isRegistering ? 'Fazer Login' : 'Cadastre-se'}
               </button>
             </p>
           </div>

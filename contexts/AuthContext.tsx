@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { User, Session, AuthError } from '@supabase/supabase-js';
 
-import { Role, Studio } from '../../types';
+import { Role, Studio } from '../types';
 
 // Define the shape of our Auth Context
 interface AuthContextType {
@@ -14,6 +14,8 @@ interface AuthContextType {
     signInWithPassword: (email: string, password: string) => Promise<{ data: any; error: AuthError | null }>;
     signUpWithPassword: (email: string, password: string) => Promise<{ data: any; error: AuthError | null }>;
     signOut: () => Promise<{ error: AuthError | null }>;
+    resetPassword: (email: string) => Promise<{ data: any; error: AuthError | null }>;
+    updatePassword: (password: string) => Promise<{ data: any; error: AuthError | null }>;
     selectSession: (studio: Studio, role: Role) => void;
 }
 
@@ -76,6 +78,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { error };
     };
 
+    const resetPassword = async (email: string) => {
+        const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+            redirectTo: `${window.location.origin}/update-password`,
+        });
+        return { data, error };
+    };
+
+    const updatePassword = async (password: string) => {
+        const { data, error } = await supabase.auth.updateUser({
+            password: password
+        });
+        return { data, error };
+    };
+
     const selectSession = (studio: Studio, role: Role) => {
         setCurrentStudio(studio);
         setSessionRole(role);
@@ -91,6 +107,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             signInWithPassword,
             signUpWithPassword,
             signOut,
+            resetPassword,
+            updatePassword,
             selectSession
         }}>
             {children}

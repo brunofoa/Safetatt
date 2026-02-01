@@ -1,37 +1,19 @@
-import React from 'react';
-import { User, Studio } from '../../types';
+
+import React, { useEffect, useState } from 'react';
+import { User, Studio } from '../types';
+import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
+import { studioService } from '../services/studioService';
+import FloatingHeader from '../components/FloatingHeader';
 
 interface StudioSelectionProps {
   user: User;
   onSelectStudio: (studio: Studio) => void;
+  onEnterAdmin?: () => void;
 }
 
-const STUDIOS: Studio[] = [
-  {
-    id: 'studio_1',
-    name: 'Ink & Iron Studio',
-    owner: 'Kevin Ferguson',
-    role: 'MASTER',
-    logo: 'https://picsum.photos/seed/ink/200/200',
-    memberCount: 15
-  },
-  {
-    id: 'studio_2',
-    name: 'Primal Mark Collective',
-    owner: 'Kevin Ferguson',
-    role: 'ARTIST',
-    logo: 'https://picsum.photos/seed/primal/200/200',
-    memberCount: 5
-  },
-  {
-    id: 'studio_3',
-    name: 'Eternal Ink Boutique',
-    owner: 'Kevin Ferguson',
-    role: 'CLIENT',
-    logo: 'https://picsum.photos/seed/eternal/200/200',
-    memberCount: 1
-  }
-];
+const MOCK_STUDIOS: Studio[] = []; // Disabled mock
+
 
 const getRoleLabel = (role: string) => {
   switch (role) {
@@ -42,27 +24,88 @@ const getRoleLabel = (role: string) => {
   }
 };
 
-const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio }) => {
+const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio, onEnterAdmin }) => {
+  const { session } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [studios, setStudios] = useState<Studio[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!session?.user) return;
+      console.log('Fetching data for user:', session.user.id);
+
+      try {
+        // 1. Check Admin (Direct Query)
+        const { data: profile, error: profileError } = await supabase
+          .from('profiles')
+          .select('is_platform_admin, full_name') // Fetch name too just in case
+          .eq('id', session.user.id)
+          .single();
+
+        if (profileError) {
+          console.error('Profile fetch error:', profileError);
+        } else if (profile?.is_platform_admin) {
+          console.log('User is admin');
+          setIsAdmin(true);
+        } else {
+          console.log('User is NOT admin', profile);
+        }
+
+        // 2. Fetch Studios (Manual Two-Step to avoid inner join RLS weirdness)
+        const { data: members, error: memberError } = await supabase
+          .from('studio_members')
+          .select('studio_id, role')
+          .eq('profile_id', session.user.id);
+
+        if (memberError) {
+          console.error('Member fetch error:', memberError);
+          setLoading(false);
+          return;
+        }
+
+        if (members && members.length > 0) {
+          const studioIds = members.map(m => m.studio_id);
+          const { data: studiosData, error: studiosError } = await supabase
+            .from('studios')
+            .select('id, name, logo_url, contact_email, owner_id') // Ensure fields exist
+            .in('id', studioIds);
+
+          if (studiosError) {
+            console.error('Studios fetch error:', studiosError);
+          } else {
+            // Merge data
+            const finalStudios = studiosData?.map(s => {
+              const member = members.find(m => m.studio_id === s.id);
+              return {
+                id: s.id,
+                name: s.name,
+                logo: s.logo_url,
+                role: member?.role || 'CLIENT', // Fallback
+                owner: 'Studio',
+                memberCount: 0
+              } as Studio;
+            }) || [];
+            setStudios(finalStudios);
+          }
+        } else {
+          console.log('No memberships found');
+          setStudios([]);
+        }
+
+      } catch (err) {
+        console.error('Unexpected error in fetchData:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [session]);
+
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
-      <header className="fixed top-4 left-4 right-4 z-50 header-gradient h-16 rounded-2xl flex items-center justify-between px-6 shadow-2xl border border-zinc-800 glass-header">
-        <div className="flex items-center gap-2">
-          <span className="material-icons text-primary text-3xl">auto_fix_high</span>
-          <span className="text-white font-extrabold text-xl tracking-tighter">Safetatt</span>
-        </div>
-        <div className="flex items-center gap-4">
-          <button
-            className="p-2 rounded-full hover:bg-white/10 text-white transition-colors"
-            onClick={() => document.documentElement.classList.toggle('dark')}
-          >
-            <span className="material-icons text-xl dark:hidden">dark_mode</span>
-            <span className="material-icons text-xl hidden dark:block">light_mode</span>
-          </button>
-          <div className="h-8 w-8 rounded-full bg-primary flex items-center justify-center text-black font-bold text-sm">
-            KF
-          </div>
-        </div>
-      </header>
+      <FloatingHeader user={user} onToggleMenu={() => { }} />
 
       <main className="pt-32 pb-16 px-6 max-w-7xl mx-auto">
         <div className="mb-12">
@@ -71,39 +114,72 @@ const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio 
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {STUDIOS.map((studio) => (
+          {/* Admin Card */}
+          {isAdmin && onEnterAdmin && (
             <div
-              key={studio.id}
-              className="group relative bg-white dark:bg-zinc-900 border border-[#333333] p-8 rounded-3xl hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer"
-              onClick={() => onSelectStudio(studio)}
+              className="group relative bg-zinc-900 border border-[#92FFAD]/30 p-8 rounded-3xl hover:shadow-xl hover:shadow-[#92FFAD]/20 transition-all duration-300 hover:-translate-y-1 cursor-pointer"
+              onClick={onEnterAdmin}
             >
               <div className="flex justify-between items-start mb-6">
-                <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
-                  <img alt={studio.name} className="object-cover w-full h-full opacity-80 group-hover:scale-110 transition-transform duration-500" src={studio.logo} />
+                <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-[#92FFAD] to-[#5CDFF0] flex items-center justify-center shadow-lg shadow-[#92FFAD]/20">
+                  <span className="material-icons text-black text-3xl">admin_panel_settings</span>
                 </div>
-                <span className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest ${studio.role === 'MASTER' ? 'bg-primary text-black' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
-                  }`}>
-                  {getRoleLabel(studio.role)}
+                <span className="px-3 py-1 rounded-full text-[10px] font-bold tracking-widest bg-[#5CDFF0]/10 text-[#5CDFF0]">
+                  ADMIN
                 </span>
               </div>
-              <h3 className="text-xl font-bold mb-1">{studio.name}</h3>
-              <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">{studio.owner}</p>
+              <h3 className="text-xl font-bold mb-1 text-white">SaaS Admin</h3>
+              <p className="text-zinc-400 text-sm mb-6">Área Administrativa Global</p>
 
               <div className="flex items-center justify-end mt-auto">
-                <button className="bg-black dark:bg-white text-white dark:text-black px-6 py-2.5 rounded-full font-bold text-sm hover:bg-primary hover:text-black dark:hover:bg-primary dark:hover:text-black transition-colors flex items-center gap-2">
-                  Entrar <span className="material-icons text-sm">arrow_forward</span>
+                <button className="bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black px-6 py-2.5 rounded-full font-bold text-sm hover:opacity-90 transition-opacity flex items-center gap-2">
+                  Acessar <span className="material-icons text-sm">arrow_forward</span>
                 </button>
               </div>
             </div>
-          ))}
+          )}
 
-          <div className="border-2 border-dashed border-slate-300 dark:border-[#333333] p-8 rounded-3xl flex flex-col items-center justify-center text-center cursor-pointer hover:border-primary transition-colors group">
-            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-[#1A1A1A] flex items-center justify-center mb-4 group-hover:bg-primary group-hover:text-black transition-colors">
-              <span className="material-icons">add</span>
+          {loading ? (
+            <div className="col-span-full text-center py-10 text-gray-500">
+              <span className="material-icons animate-spin text-3xl mb-2">sync</span>
+              <p>Carregando estúdios...</p>
             </div>
-            <h3 className="font-bold text-lg">Adicionar Novo Estúdio</h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">Conectar um novo estúdio de tatuagem</p>
-          </div>
+          ) : studios.length === 0 ? (
+            <div className="col-span-full text-center py-10 text-gray-500">
+              <p>Nenhum estúdio encontrado. Clique abaixo para criar o seu!</p>
+            </div>
+          ) : (
+            studios.map((studio) => (
+              <div
+                key={studio.id}
+                className="group relative bg-white dark:bg-zinc-900 border border-[#333333] p-8 rounded-3xl hover:shadow-xl transition-all duration-300 hover:-translate-y-1 cursor-pointer"
+                onClick={() => onSelectStudio(studio)}
+              >
+                <div className="flex justify-between items-start mb-6">
+                  <div className="w-16 h-16 rounded-2xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center overflow-hidden border border-slate-200 dark:border-slate-700">
+                    {studio.logo ? (
+                      <img alt={studio.name} className="object-cover w-full h-full opacity-80 group-hover:scale-110 transition-transform duration-500" src={studio.logo} />
+                    ) : (
+                      <span className="text-xl font-bold text-gray-400">{studio.name.charAt(0)}</span>
+                    )}
+                  </div>
+                  <span className={`px-3 py-1 rounded-full text-[10px] font-bold tracking-widest ${studio.role === 'MASTER' ? 'bg-primary text-black' : 'bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200'
+                    }`}>
+                    {getRoleLabel(studio.role)}
+                  </span>
+                </div>
+                <h3 className="text-xl font-bold mb-1">{studio.name}</h3>
+                <p className="text-slate-500 dark:text-slate-400 text-sm mb-6">{studio.owner}</p>
+
+                <div className="flex items-center justify-end mt-auto">
+                  <button className="bg-black dark:bg-white text-white dark:text-black px-6 py-2.5 rounded-full font-bold text-sm hover:bg-primary hover:text-black dark:hover:bg-primary dark:hover:text-black transition-colors flex items-center gap-2">
+                    Entrar <span className="material-icons text-sm">arrow_forward</span>
+                  </button>
+                </div>
+              </div>
+            )))}
+
+
         </div>
       </main>
     </div>

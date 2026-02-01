@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, CheckCircle, PaperPlaneRight, User, Users, Image, MagicWand, CalendarBlank, Funnel, MagnifyingGlass, CaretDown } from '@phosphor-icons/react';
+import { X, CheckCircle, PaperPlaneRight, User, Users, Image, MagicWand, CalendarBlank, Funnel, MagnifyingGlass, CaretDown, Spinner } from '@phosphor-icons/react';
 import { marketingService } from '../services/marketingService';
+import { whatsappService } from '../services/whatsappService';
 import { useAuth } from '../contexts/AuthContext';
 
 interface MarketingCampaignModalProps {
@@ -11,20 +12,10 @@ interface MarketingCampaignModalProps {
 }
 
 // --- MOCK DATA ---
-const MOCK_CLIENTS_FULL = [
-    { id: '1', name: 'Alana Bastos', phone: '(11) 99999-1111', lastVisit: '2023-10-15', artist: 'Marcus Thorne', gender: 'Feminino', birthMonth: 1 },
-    { id: '2', name: 'Bruno Foa', phone: '(11) 98888-2222', lastVisit: '2023-11-20', artist: 'Elena Vanc', gender: 'Masculino', birthMonth: 5 },
-    { id: '3', name: 'Carla Dias', phone: '(11) 97777-3333', lastVisit: '2023-08-05', artist: 'Roberto Lima', gender: 'Feminino', birthMonth: 5 },
-    { id: '4', name: 'Daniel Rocha', phone: '(11) 96666-4444', lastVisit: '2024-01-10', artist: 'Marcus Thorne', gender: 'Masculino', birthMonth: 2 },
-    { id: '5', name: 'Elena Vanc', phone: '(11) 95555-5555', lastVisit: '2023-12-01', artist: 'Roberto Lima', gender: 'Feminino', birthMonth: 1 },
-    { id: '6', name: 'Fernando Silva', phone: '(11) 94444-6666', lastVisit: '2023-09-12', artist: 'Marcus Thorne', gender: 'Masculino', birthMonth: 5 },
-    { id: '7', name: 'Gabriela Souza', phone: '(11) 93333-7777', lastVisit: '2023-07-20', artist: 'Elena Vanc', gender: 'Feminino', birthMonth: 8 },
-    { id: '8', name: 'Hugo Santos', phone: '(11) 92222-8888', lastVisit: '2023-06-15', artist: 'Roberto Lima', gender: 'Masculino', birthMonth: 5 },
-    { id: '9', name: 'Igor Oliveira', phone: '(11) 91111-9999', lastVisit: '2023-05-30', artist: 'Marcus Thorne', gender: 'Masculino', birthMonth: 12 },
-    { id: '10', name: 'Julia Lima', phone: '(11) 90000-0000', lastVisit: '2023-04-10', artist: 'Elena Vanc', gender: 'Feminino', birthMonth: 5 },
-];
+// --- REAL DATA STATE ---
 
 const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen, onClose, initialAudience, initialTemplate }) => {
+    const { currentStudio } = useAuth();
     const [step, setStep] = useState(1);
     const [campaignName, setCampaignName] = useState('');
     const [audience, setAudience] = useState('all');
@@ -32,6 +23,9 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
     const [isSending, setIsSending] = useState(false);
     const [mediaFile, setMediaFile] = useState<File | null>(null);
     const [mediaPreview, setMediaPreview] = useState<string | null>(null);
+    const [clients, setClients] = useState<any[]>([]);
+    const [loadingClients, setLoadingClients] = useState(false);
+    const [sentCount, setSentCount] = useState(0);
 
     // Filter States
     const [filters, setFilters] = useState({
@@ -63,13 +57,41 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
             } else {
                 setMessageContent("");
             }
-            // Reset media
-            setMediaFile(null);
             setMediaPreview(null);
             setFilters({ month: new Date().getMonth() + 1, gender: '', artist: '', searchText: '' });
             setSelectedClientIds([]);
+            setSentCount(0);
         }
     }, [isOpen, initialAudience, initialTemplate]);
+
+    // Fetch Audience
+    useEffect(() => {
+        if (isOpen && currentStudio?.id) {
+            const fetchAudience = async () => {
+                setLoadingClients(true);
+                const data = await marketingService.getAudience(currentStudio.id, audience);
+                setClients(data);
+
+                // Auto-select logic
+                // For birthday, select only matching month
+                if (audience === 'birthday') {
+                    const month = new Date().getMonth() + 1;
+                    const matching = data.filter(c => {
+                        const d = new Date(c.birthDate);
+                        // Adjust for timezone/parsing if needed, assume simplistic
+                        const m = parseInt(c.birthDate.split('-')[1]);
+                        return m === month;
+                    });
+                    setSelectedClientIds(matching.map(c => c.id));
+                } else {
+                    setSelectedClientIds(data.map(c => c.id));
+                }
+
+                setLoadingClients(false);
+            };
+            fetchAudience();
+        }
+    }, [isOpen, audience, currentStudio]);
 
     // Media cleanup
     useEffect(() => {
@@ -80,37 +102,38 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
 
     // --- FILTER LOGIC ---
     const filteredClients = useMemo(() => {
-        return MOCK_CLIENTS_FULL.filter(client => {
-            // 1. Audience Type Filter
+        return clients.filter(client => {
+            // 1. Audience Type Filter (Birthday specific)
             if (audience === 'birthday') {
-                if (client.birthMonth !== filters.month) return false;
+                const parts = client.birthDate?.split('-') || [];
+                if (parts.length > 1) {
+                    const month = parseInt(parts[1]);
+                    if (month !== filters.month) return false;
+                }
             }
             if (audience === 'winback') {
-                // Mock logic: assume anyone visited > 3 months ago is winback
-                // For demo, let's just show everyone unless filtered by other things, 
-                // typically you'd compare client.lastVisit
+                // Handled by service mostly, but can double check here
+                // Service returns all winbacks.
             }
 
             // 2. Explicit Filters
             if (filters.gender && client.gender !== filters.gender) return false;
-            if (filters.artist && client.artist !== filters.artist) return false;
+            // if (filters.artist && client.artist !== filters.artist) return false; // Disabled until artist mapping in service
+
             if (filters.searchText) {
                 const search = filters.searchText.toLowerCase();
-                if (!client.name.toLowerCase().includes(search) && !client.phone.includes(search)) return false;
+                const nameMatch = client.name?.toLowerCase().includes(search);
+                const phoneMatch = client.phone?.includes(search);
+                if (!nameMatch && !phoneMatch) return false;
             }
 
             return true;
         });
-    }, [audience, filters]);
+    }, [audience, filters, clients]);
 
-    // Auto-select filtered clients when list changes (Optional, or manual only. Let's do manual only but default select all on load? No, manual is safer.)
-    // Let's default select ALL when the audience changes or modal opens, logic below:
-    useEffect(() => {
-        if (isOpen && step === 1) {
-            const ids = filteredClients.map(c => c.id);
-            setSelectedClientIds(ids);
-        }
-    }, [isOpen, step, audience, filters.month]); // Re-select when core audience params change
+    // Auto-select filtered clients when list changes
+    // Removed duplicate useEffect that causes infinite loops or override
+    // We handle initial selection in fetchAudience
 
 
     const toggleClient = (id: string) => {
@@ -130,7 +153,7 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
 
     if (!isOpen) return null;
 
-    const { currentStudio } = useAuth(); // Import useAuth at top level if not already
+
 
     const handleNext = () => setStep(prev => prev + 1);
     const handleBack = () => setStep(prev => prev - 1);
@@ -141,26 +164,57 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
             return;
         }
 
+        if (!currentStudio.whatsapp_instance_id || !currentStudio.whatsapp_token) {
+            alert('Erro: WhatsApp não conectado. Configure em Configurações.');
+            return;
+        }
+
         setIsSending(true);
+        setSentCount(0);
+
         try {
+            // 1. Send Messages
+            let successCount = 0;
+            const targets = filteredClients.filter(c => selectedClientIds.includes(c.id));
+
+            for (const client of targets) {
+                const personalizedMessage = messageContent
+                    .replace(/{nome}/g, client.name.split(' ')[0])
+                    .replace(/{nome_estudio}/g, currentStudio.name)
+                    .replace(/{link_agendamento}/g, `https://wa.me/${currentStudio.contact_phone?.replace(/\D/g, '') || ''}`);
+
+                const res = await whatsappService.sendMessage(
+                    currentStudio.whatsapp_instance_id,
+                    currentStudio.whatsapp_token,
+                    client.phone,
+                    personalizedMessage
+                );
+
+                if (res.success) successCount++;
+                setSentCount(prev => prev + 1);
+
+                // Anti-ban delay
+                await new Promise(r => setTimeout(r, Math.random() * 2000 + 1000));
+            }
+
+            // 2. Create Campaign Record
             await marketingService.createCampaign({
                 studio_id: currentStudio.id,
                 name: campaignName,
                 type: (initialTemplate as any) || 'custom',
                 status: 'sent',
-                audience_count: selectedClientIds.length,
+                audience_count: successCount, // Count successfully sent
                 channel: 'whatsapp'
             });
 
-            // Small delay for UI feedback
             setTimeout(() => {
                 setIsSending(false);
                 onClose();
-                alert(`Campanha enviada com sucesso para ${selectedClientIds.length} clientes!`);
+                alert(`Campanha enviada com sucesso para ${successCount} clientes!`);
             }, 500);
         } catch (error) {
             console.error(error);
-            alert('Erro ao criar campanha.');
+            alert('Erro ao processar envio.');
             setIsSending(false);
         }
     };
@@ -309,7 +363,7 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
                             </div>
 
                             {/* CLIENT LIST TABLE */}
-                            <div className="rounded-2xl border border-[#333333] overflow-hidden bg-white dark:bg-[#1A1A1A]">
+                            <div className="rounded-2xl border border-[#333333] overflow-hidden bg-white dark:bg-[#1A1A1A] relative">
                                 <div className="p-3 bg-gray-50 dark:bg-white/5 border-b border-[#333333] flex justify-between items-center">
                                     <div className="flex items-center gap-2">
                                         <input
@@ -322,7 +376,9 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
                                             {selectedClientIds.length} selecionados
                                         </span>
                                     </div>
-                                    <span className="text-xs text-gray-400">Total filtrado: {filteredClients.length}</span>
+                                    <span className="text-xs text-gray-400">
+                                        {loadingClients ? 'Carregando...' : `Total filtrado: ${filteredClients.length}`}
+                                    </span>
                                 </div>
 
                                 <div className="max-h-60 overflow-y-auto custom-scrollbar">
@@ -365,6 +421,11 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
                                         </tbody>
                                     </table>
                                 </div>
+                                {loadingClients && (
+                                    <div className="absolute inset-0 bg-white/50 dark:bg-black/50 flex items-center justify-center z-20">
+                                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+                                    </div>
+                                )}
                                 <div className="p-2 bg-gray-50 dark:bg-white/5 border-t border-[#333333] text-center">
                                     <p className="text-xs text-primary font-bold">
                                         Selecionados para envio: {selectedClientIds.length} clientes
@@ -375,110 +436,114 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
                     )}
 
                     {/* STEP 2: CONTENT */}
-                    {step === 2 && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-                            <div>
-                                <div className="flex justify-between items-center mb-2">
-                                    <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Mensagem</label>
-                                    <div className="flex gap-2 flex-wrap justify-end">
-                                        <button onClick={() => insertVariable('{nome}')} className="text-xs px-2 py-1 bg-gray-200 dark:bg-white/10 rounded hover:bg-gray-300 dark:hover:bg-white/20 transition-colors text-gray-700 dark:text-gray-300">+ Nome</button>
-                                        <button onClick={() => insertVariable('{nome_estudio}')} className="text-xs px-2 py-1 bg-gray-200 dark:bg-white/10 rounded hover:bg-gray-300 dark:hover:bg-white/20 transition-colors text-gray-700 dark:text-gray-300">+ Nome Estúdio</button>
-                                        <button onClick={() => insertVariable('{link_agendamento}')} className="text-xs px-2 py-1 bg-gray-200 dark:bg-white/10 rounded hover:bg-gray-300 dark:hover:bg-white/20 transition-colors text-gray-700 dark:text-gray-300">+ Link Agendamento</button>
+                    {
+                        step === 2 && (
+                            <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                                <div>
+                                    <div className="flex justify-between items-center mb-2">
+                                        <label className="text-sm font-bold text-slate-700 dark:text-slate-300">Mensagem</label>
+                                        <div className="flex gap-2 flex-wrap justify-end">
+                                            <button onClick={() => insertVariable('{nome}')} className="text-xs px-2 py-1 bg-gray-200 dark:bg-white/10 rounded hover:bg-gray-300 dark:hover:bg-white/20 transition-colors text-gray-700 dark:text-gray-300">+ Nome</button>
+                                            <button onClick={() => insertVariable('{nome_estudio}')} className="text-xs px-2 py-1 bg-gray-200 dark:bg-white/10 rounded hover:bg-gray-300 dark:hover:bg-white/20 transition-colors text-gray-700 dark:text-gray-300">+ Nome Estúdio</button>
+                                            <button onClick={() => insertVariable('{link_agendamento}')} className="text-xs px-2 py-1 bg-gray-200 dark:bg-white/10 rounded hover:bg-gray-300 dark:hover:bg-white/20 transition-colors text-gray-700 dark:text-gray-300">+ Link Agendamento</button>
+                                        </div>
+                                    </div>
+                                    <textarea
+                                        value={messageContent}
+                                        onChange={(e) => setMessageContent(e.target.value)}
+                                        className="w-full h-48 px-4 py-3 rounded-xl border border-[#333333] bg-white dark:bg-[#1A1A1A] dark:text-white focus:ring-2 focus:ring-primary outline-none transition-all resize-none"
+                                        placeholder="Digite sua mensagem aqui..."
+                                    />
+                                    <div className="flex justify-between items-center mt-2">
+                                        <p className="text-xs text-slate-400">Dica: Use variáveis para personalizar.</p>
+                                        <div className="relative">
+                                            <input
+                                                type="file"
+                                                id="media-upload"
+                                                accept="image/*,video/*"
+                                                className="hidden"
+                                                onChange={handleFileChange}
+                                            />
+                                            <label
+                                                htmlFor="media-upload"
+                                                className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary-light transition-colors cursor-pointer"
+                                            >
+                                                <Image size={18} weight="bold" />
+                                                {mediaFile ? 'Trocar Mídia' : 'Anexar Mídia'}
+                                            </label>
+                                        </div>
                                     </div>
                                 </div>
-                                <textarea
-                                    value={messageContent}
-                                    onChange={(e) => setMessageContent(e.target.value)}
-                                    className="w-full h-48 px-4 py-3 rounded-xl border border-[#333333] bg-white dark:bg-[#1A1A1A] dark:text-white focus:ring-2 focus:ring-primary outline-none transition-all resize-none"
-                                    placeholder="Digite sua mensagem aqui..."
-                                />
-                                <div className="flex justify-between items-center mt-2">
-                                    <p className="text-xs text-slate-400">Dica: Use variáveis para personalizar.</p>
-                                    <div className="relative">
-                                        <input
-                                            type="file"
-                                            id="media-upload"
-                                            accept="image/*,video/*"
-                                            className="hidden"
-                                            onChange={handleFileChange}
-                                        />
-                                        <label
-                                            htmlFor="media-upload"
-                                            className="flex items-center gap-2 text-sm font-medium text-primary hover:text-primary-light transition-colors cursor-pointer"
+
+                                {/* Attachments Preview */}
+                                {mediaPreview && (
+                                    <div className="relative w-full h-40 bg-gray-100 dark:bg-black/40 rounded-xl overflow-hidden border border-[#333333] flex items-center justify-center">
+                                        <button
+                                            onClick={() => { setMediaFile(null); setMediaPreview(null); }}
+                                            className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full hover:bg-red-500 transition-colors z-10"
                                         >
-                                            <Image size={18} weight="bold" />
-                                            {mediaFile ? 'Trocar Mídia' : 'Anexar Mídia'}
-                                        </label>
+                                            <X size={16} />
+                                        </button>
+                                        {mediaFile?.type.startsWith('video') ? (
+                                            <video src={mediaPreview} controls className="h-full max-w-full" />
+                                        ) : (
+                                            <img src={mediaPreview} alt="Preview" className="h-full object-contain" />
+                                        )}
                                     </div>
+                                )}
+
+                                {/* Preview (Mock) */}
+                                <div className="p-4 bg-white dark:bg-[#1A1A1A] rounded-xl border border-[#333333] opacity-80">
+                                    <p className="text-xs font-bold text-gray-400 uppercase mb-2">Pré-visualização (Exemplo)</p>
+                                    <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
+                                        {messageContent
+                                            .replace('{nome}', 'Bruno')
+                                            .replace('{nome_estudio}', 'SafeTatt Studio')
+                                            .replace('{link_agendamento}', 'safetatt.com/agendar/123')
+                                        }
+                                    </p>
                                 </div>
                             </div>
-
-                            {/* Attachments Preview */}
-                            {mediaPreview && (
-                                <div className="relative w-full h-40 bg-gray-100 dark:bg-black/40 rounded-xl overflow-hidden border border-[#333333] flex items-center justify-center">
-                                    <button
-                                        onClick={() => { setMediaFile(null); setMediaPreview(null); }}
-                                        className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full hover:bg-red-500 transition-colors z-10"
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                    {mediaFile?.type.startsWith('video') ? (
-                                        <video src={mediaPreview} controls className="h-full max-w-full" />
-                                    ) : (
-                                        <img src={mediaPreview} alt="Preview" className="h-full object-contain" />
-                                    )}
-                                </div>
-                            )}
-
-                            {/* Preview (Mock) */}
-                            <div className="p-4 bg-white dark:bg-[#1A1A1A] rounded-xl border border-[#333333] opacity-80">
-                                <p className="text-xs font-bold text-gray-400 uppercase mb-2">Pré-visualização (Exemplo)</p>
-                                <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap">
-                                    {messageContent
-                                        .replace('{nome}', 'Bruno')
-                                        .replace('{nome_estudio}', 'SafeTatt Studio')
-                                        .replace('{link_agendamento}', 'safetatt.com/agendar/123')
-                                    }
-                                </p>
-                            </div>
-                        </div>
-                    )}
+                        )
+                    }
 
                     {/* STEP 3: SUMMARY */}
-                    {step === 3 && (
-                        <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
-                            <div className="p-6 bg-white dark:bg-[#1A1A1A] rounded-2xl border border-[#333333] text-center">
-                                <div className="w-16 h-16 bg-primary/20 text-primary rounded-full flex items-center justify-center mx-auto mb-4">
-                                    <PaperPlaneRight size={32} weight="fill" />
-                                </div>
-                                <h3 className="text-xl font-bold dark:text-white mb-2">Tudo pronto para enviar!</h3>
-                                <p className="text-gray-500 mb-6">Sua campanha <span className="text-primary font-bold">"{campaignName}"</span> está configurada.</p>
-
-                                <div className="grid grid-cols-2 gap-4 text-left max-w-sm mx-auto mb-4">
-                                    <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
-                                        <p className="text-xs text-gray-400 font-bold uppercase">Destinatários</p>
-                                        <p className="font-medium dark:text-white truncate">
-                                            {
-                                                audience === 'all' ? 'Todos os Clientes' :
-                                                    audience === 'birthday' ? 'Aniversariantes' :
-                                                        audience === 'winback' ? 'Inativos (+90 dias)' :
-                                                            'Sessões em Aberto'
-                                            }
-                                        </p>
+                    {
+                        step === 3 && (
+                            <div className="space-y-6 animate-in slide-in-from-right-4 duration-300">
+                                <div className="p-6 bg-white dark:bg-[#1A1A1A] rounded-2xl border border-[#333333] text-center">
+                                    <div className="w-16 h-16 bg-primary/20 text-primary rounded-full flex items-center justify-center mx-auto mb-4">
+                                        <PaperPlaneRight size={32} weight="fill" />
                                     </div>
-                                    <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
-                                        <p className="text-xs text-gray-400 font-bold uppercase">Estimativa</p>
-                                        <p className="font-medium dark:text-white">{selectedClientIds.length} Pessoas</p>
+                                    <h3 className="text-xl font-bold dark:text-white mb-2">Tudo pronto para enviar!</h3>
+                                    <p className="text-gray-500 mb-6">Sua campanha <span className="text-primary font-bold">"{campaignName}"</span> está configurada.</p>
+
+                                    <div className="grid grid-cols-2 gap-4 text-left max-w-sm mx-auto mb-4">
+                                        <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
+                                            <p className="text-xs text-gray-400 font-bold uppercase">Destinatários</p>
+                                            <p className="font-medium dark:text-white truncate">
+                                                {
+                                                    audience === 'all' ? 'Todos os Clientes' :
+                                                        audience === 'birthday' ? 'Aniversariantes' :
+                                                            audience === 'winback' ? 'Inativos (+90 dias)' :
+                                                                'Sessões em Aberto'
+                                                }
+                                            </p>
+                                        </div>
+                                        <div className="p-3 bg-gray-50 dark:bg-white/5 rounded-lg">
+                                            <p className="text-xs text-gray-400 font-bold uppercase">Estimativa</p>
+                                            <p className="font-medium dark:text-white">{selectedClientIds.length} Pessoas</p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    )}
+                        )
+                    }
 
-                </div>
+                </div >
 
                 {/* Footer Actions */}
-                <div className="p-6 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#121212] flex justify-between items-center z-10">
+                < div className="p-6 border-t border-gray-100 dark:border-white/5 bg-white dark:bg-[#121212] flex justify-between items-center z-10" >
                     <button
                         onClick={step === 1 ? onClose : handleBack}
                         disabled={isSending}
@@ -493,17 +558,17 @@ const MarketingCampaignModal: React.FC<MarketingCampaignModalProps> = ({ isOpen,
                         className={`btn-gradient text-black font-bold py-3 px-8 rounded-xl shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed`}
                     >
                         {isSending ? (
-                            <>Disparando...</>
+                            <>Disparando ({sentCount}/{selectedClientIds.length})...</>
                         ) : step === 3 ? (
                             <>Disparar Agora <PaperPlaneRight size={18} weight="bold" /></>
                         ) : (
                             <>Próximo Passo <span className="material-icons text-sm">arrow_forward</span></>
                         )}
                     </button>
-                </div>
+                </div >
 
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };
 

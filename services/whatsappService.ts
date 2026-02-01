@@ -7,150 +7,282 @@ const GLOBAL_KEY = import.meta.env.VITE_WHATSAPP_GLOBAL_KEY;
 interface ConnectionResponse {
     status: 'CONNECTED' | 'DISCONNECTED' | 'CONNECTING';
     qrCode?: string; // Base64
+    qrcode?: string; // API Variation
+    base64?: string; // API Variation
+    debug?: any;
 }
 
-interface SendMessageResponse {
-    success: boolean;
-    messageId?: string;
-    error?: any;
-}
+const cleanBaseUrl = API_URL?.replace(/\/$/, '');
+const SANITIZED_KEY = GLOBAL_KEY?.trim().replace(/['"]/g, '') || '';
 
 const api = axios.create({
-    baseURL: API_URL,
-    headers: {
-        'apikey': GLOBAL_KEY,
-        'Content-Type': 'application/json'
-    }
+    baseURL: cleanBaseUrl
 });
 
+api.defaults.headers.common['Authorization'] = `Bearer ${SANITIZED_KEY}`;
+api.defaults.headers.common['apikey'] = SANITIZED_KEY;
+api.defaults.headers.common['admintoken'] = SANITIZED_KEY;
+
+console.log('[WhatsApp] Configured with Key Length:', SANITIZED_KEY.length);
+
 /**
- * Checks connection status. If disconnected, tries to connect and returns QR Code.
+ * Creates/Initializes a new WhatsApp instance.
+ * ENDPOINT: /instance/init (based on user docs)
  */
-export const getConnectionInfo = async (instanceName: string): Promise<ConnectionResponse> => {
+export const createInstance = async (instanceName: string) => {
     try {
-        // 1. Check State
-        const stateRes = await api.get(`/instance/connectionState/${instanceName}`);
-        const state = stateRes.data?.instance?.state; // 'open', 'close', 'connecting'
+        const url = `${cleanBaseUrl}/instance/init`;
 
-        if (state === 'open') {
-            return { status: 'CONNECTED' };
+        console.log('Tentando conectar em:', url, 'com headers:', {
+            'Authorization': `Bearer ${SANITIZED_KEY?.substring(0, 5)}...`,
+            'apikey': `${SANITIZED_KEY?.substring(0, 5)}...`,
+            'admintoken': `${SANITIZED_KEY?.substring(0, 5)}...`,
+            'Content-Type': 'application/json'
+        });
+
+        // Payload: Documentation shows "name" as the required field.
+        const payload = {
+            name: instanceName,
+            instanceName: instanceName // Sending both to be safe against API variations
+        };
+
+        const response = await api.post('/instance/init', payload);
+        return response.data;
+    } catch (error: any) {
+        if (error.response?.status === 401) {
+            console.error('[WhatsApp] 401 Unauthorized Detail:', {
+                url: `${cleanBaseUrl}/instance/init`,
+                headersSent: {
+                    ...api.defaults.headers.common,
+                    Authorization: `Bearer ${SANITIZED_KEY.substring(0, 5)}...`
+                },
+                responseData: JSON.stringify(error.response?.data || {})
+            });
+        } else if (error.response?.status === 404) {
+            console.error('[WhatsApp] 404 Not Found - Check API URL:', `${cleanBaseUrl}/instance/init`);
         }
 
-        // 2. If close/connecting, fetch Connect to get QR
-        const connectRes = await api.get(`/instance/connect/${instanceName}`);
-        const base64 = connectRes.data?.base64;
-
-        if (base64) {
-            return { status: 'DISCONNECTED', qrCode: base64 };
-        }
-
-        return { status: 'CONNECTING' }; // Fallback
-    } catch (error) {
-        console.error('WhatsApp Connection Error:', error);
-        return { status: 'DISCONNECTED' };
+        console.error('[WhatsApp] Create Instance Failed:', JSON.stringify(error.response?.data || error.message));
+        throw error;
     }
 };
 
 /**
- * Helper delay function for anti-ban
+ * Connects a WhatsApp instance to get the QR Code.
+ */
+/**
+ * Connects a WhatsApp instance to get the QR Code.
+ * Updated to use POST /instance/connect with instance token.
+ */
+export const connectInstance = async (token: string): Promise<ConnectionResponse> => {
+    try {
+        console.log(`[WhatsApp] Connecting with token prefix: ${token?.substring(0, 5)}...`);
+
+        // Endpoint: /instance/connect (POST)
+        // Trying to pass token in Query Params as well since Headers returned 401 Missing Token
+        const response = await axios.post(`${cleanBaseUrl}/instance/connect`, {}, {
+            params: {
+                token: token
+            },
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'apikey': SANITIZED_KEY,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        console.log('[WhatsApp] Connect Response:', response.data);
+
+        const data = response.data || {};
+        const instance = data.instance;
+        // Try multiple fields for QR
+        // API v2 seems to return it inside instance object sometimes
+        console.log('[WhatsApp] Instance Data:', JSON.stringify(instance));
+        const qr = data.base64 || data.qrcode || data.code || data.url || instance?.qrcode || instance?.base64;
+        console.log('[WhatsApp] Resolved QR:', qr ? qr.substring(0, 50) + '...' : 'NULL');
+
+        const debugInfo = {
+            ...data,
+            _meta: {
+                url: `${cleanBaseUrl}/instance/connect`,
+                status: response.status,
+                headers: response.headers
+            },
+            _diagnostics: {
+                has_instance: !!instance,
+                instance_type: typeof instance,
+                instance_keys: instance ? Object.keys(instance) : [],
+                has_qrcode_prop: instance ? 'qrcode' in instance : false,
+                qrcode_val_preview: instance?.qrcode ? instance.qrcode.substring(0, 20) : 'undefined'
+            }
+        };
+
+        if (instance?.state === 'open' || instance?.status === 'connected') {
+            return { status: 'CONNECTED', debug: debugInfo };
+        }
+
+        if (qr) {
+            return { status: 'DISCONNECTED', qrCode: qr, debug: debugInfo };
+        }
+
+        return { status: 'CONNECTING', debug: debugInfo };
+    } catch (error: any) {
+        const errorDebug = {
+            message: error.message,
+            response_data: error.response?.data,
+            _meta: {
+                url: `${cleanBaseUrl}/instance/connect`,
+                status: error.response?.status
+            }
+        };
+
+        if (error.response?.status === 409) {
+            return { status: 'CONNECTED', debug: errorDebug };
+        }
+        console.error('[WhatsApp] Connect Instance Failed:', error.response?.data || error.message);
+        return { status: 'DISCONNECTED', debug: errorDebug };
+    }
+};
+
+/**
+ * Checks connection state to see if QR was scanned.
+ */
+export const getConnectionState = async (instanceName: string, token: string): Promise<'open' | 'close' | 'connecting' | 'unknown'> => {
+    try {
+        const response = await axios.get(`${cleanBaseUrl}/instance/connectionState/${instanceName}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'apikey': SANITIZED_KEY
+            }
+        });
+
+        // Expected: { instance: { state: 'open' } }
+        return response.data?.instance?.state || 'unknown';
+    } catch (error) {
+        return 'unknown';
+    }
+};
+
+/**
+ * Helper delay function
  */
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Sends a text message to a single number
+ * Requests a pairing code for phone number connection
  */
-export const sendText = async (instanceName: string, number: string, text: string): Promise<SendMessageResponse> => {
+export const requestPairingCode = async (token: string, phoneNumber: string): Promise<{ pairingCode?: string; status: string; debug: any }> => {
     try {
-        // Ensure number format (55 + DDD + Number)
-        const cleanNumber = number.replace(/\D/g, '');
-        // Simple validation, UazAPI usually expects full number
+        console.log(`[WhatsApp] Requesting Pairing Code for ${phoneNumber}...`);
 
-        const res = await api.post(`/message/sendText/${instanceName}`, {
-            number: cleanNumber,
-            options: {
-                delay: 1200,
-                presence: 'composing',
-                linkPreview: false
-            },
-            textMessage: {
-                text: text
+        const cleanNumber = phoneNumber.replace(/\D/g, '');
+
+        const response = await axios.post(`${cleanBaseUrl}/instance/connect`, {
+            number: cleanNumber
+        }, {
+            params: { token },
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'apikey': SANITIZED_KEY,
+                'Content-Type': 'application/json'
             }
         });
 
-        return { success: true, messageId: res.data?.key?.id };
-    } catch (error) {
-        console.error(`Failed to send to ${number}:`, error);
-        return { success: false, error };
+        console.log('[WhatsApp] Pairing Response:', response.data);
+        const data = response.data || {};
+        const instance = data.instance || {};
+
+        const code = data.paircode || instance.paircode;
+
+        return {
+            pairingCode: code,
+            status: 'PAIRING',
+            debug: { ...data, _meta: { status: response.status } }
+        };
+
+    } catch (error: any) {
+        console.error('[WhatsApp] Pairing Error:', error);
+        return {
+            status: 'ERROR',
+            debug: { error: error.message }
+        };
     }
 };
 
 /**
- * Sends Mass Messages with Safe Delay (Anti-Ban)
- * Forces 15s-45s delay between messages.
+ * Sends a text message using the instance token.
  */
-export const sendMassMessage = async (
-    instanceName: string,
-    clients: { name: string; phone: string }[],
-    messageTemplate: string,
-    onProgress?: (current: number, total: number) => void
-) => {
-    let sentCount = 0;
-    const total = clients.length;
+export const sendMessage = async (instanceId: string, token: string, number: string, text: string): Promise<SendMessageResponse> => {
+    try {
+        const cleanNumber = number.replace(/\D/g, '');
 
-    for (const client of clients) {
-        // 1. Personalize Message
-        const message = messageTemplate.replace('{{name}}', client.name.split(' ')[0]);
+        await axios.post(`${cleanBaseUrl}/message/text`, {
+            instanceId,
+            options: { delay: 1200 },
+            textMessage: { text },
+            number: cleanNumber
+        }, {
+            headers: {
+                'Authorization': `Bearer ${token}`
+            }
+        });
 
-        // 2. Send
-        await sendText(instanceName, client.phone, message);
-        sentCount++;
-        if (onProgress) onProgress(sentCount, total);
-
-        // 3. Anti-Ban Delay (15s to 45s) - ONLY if not the last one
-        if (sentCount < total) {
-            const randomDelay = Math.floor(Math.random() * (45000 - 15000 + 1)) + 15000;
-            console.log(`Anti-ban wait: ${randomDelay}ms`);
-            await delay(randomDelay);
-        }
+        return { success: true };
+    } catch (error: any) {
+        console.error(`[WhatsApp] Send Message Failed to ${number}:`, error.response?.data || error.message);
+        return { success: false, error: error.response?.data || error };
     }
-
-    return { success: true, sentCount };
 };
 
 /**
  * Auto-Provisions a new WhatsApp instance for the studio.
- * 1. Sanitizes studio name.
- * 2. Creates instance on UazAPI.
- * 3. Updates Supabase record.
  */
 export const provisionInstance = async (studioName: string, studioId: string): Promise<{ success: boolean; instanceName?: string; error?: any }> => {
     try {
-        // 1. Sanitize Name (e.g., "Kevin's Ink" -> "kevins_ink")
+        // 1. Sanitize Name (Improved)
+        // If it comes with underscores or is simple, preserve it more faithfully.
+        // We still need to remove illegal chars for file systems/URLs if any.
+        const instanceName = studioName
+            .trim()
+            .toLowerCase()
+            .replace(/\s+/g, '_') // Spaces to underscores
+            .replace(/[^\w-]/g, ''); // Remove non-word except hyphen/underscore
+
+        // Old aggressive sanitization:
+        /*
         const instanceName = studioName
             .toLowerCase()
-            .normalize('NFD').replace(/[\u0300-\u036f]/g, "") // Remove accents
-            .replace(/[^a-z0-9]/g, "_") // Replace non-alphanumeric with _
-            .replace(/_+/g, "_") // Remove duplicate _
-            .replace(/^_|_$/g, ""); // Trim _
+            .normalize('NFD').replace(/[\u0300-\u036f]/g, "")
+            .replace(/[^a-z0-9]/g, "_")
+            .replace(/_+/g, "_")
+            .replace(/^_|_$/g, "");
+        */
 
-        // 2. Check/Create Instance on UazAPI
-        // First, check if it exists (optional, but good practice). UazAPI create usually fails if exists or returns existing.
-        // We'll try to get state. If 404/error, we create.
-        try {
-            await api.get(`/instance/connectionState/${instanceName}`);
-            console.log(`Instance ${instanceName} already exists.`);
-        } catch (e) {
-            // If doesn't exist, create it.
-            console.log(`Creating instance ${instanceName}...`);
-            await api.post(`/instance/create`, {
-                instanceName: instanceName
-            });
+        // 2. Create/Init Instance
+        const data = await createInstance(instanceName);
+
+        // Extract critical data
+        // API response for /instance/init might differ.
+        // Usually: { instance: { id, ... }, hash: { token, ... } }
+        const instanceId = data.instance?.instanceId || data.instance?.id || data.instanceId || data.id; // added data.id check
+        const token = data.hash?.token || data.token || data.auth?.token; // added data.auth check
+
+        if (!instanceId || !token) {
+            console.error('API Response Structure Unexpected:', data);
+            throw new Error('Invalid response from WhatsApp API: Missing instanceId or token');
         }
+
+        console.log(`[WhatsApp] Instance Created: ${instanceName} (${instanceId})`);
 
         // 3. Update Supabase
         const { error } = await supabase
             .from('studios')
-            .update({ whatsapp_instance_name: instanceName })
+            .update({
+                whatsapp_instance_name: instanceName,
+                whatsapp_instance_id: instanceId,
+                whatsapp_token: token,
+                whatsapp_status: 'connecting'
+            })
             .eq('id', studioId);
 
         if (error) throw error;
@@ -162,9 +294,75 @@ export const provisionInstance = async (studioName: string, studioId: string): P
     }
 };
 
+/**
+ * Sends Mass Messages
+ */
+export const sendMassMessage = async (
+    studioId: string,
+    clients: { name: string; phone: string }[],
+    messageTemplate: string,
+    onProgress?: (current: number, total: number) => void
+) => {
+    // 1. Fetch Credentials
+    const { data: studio } = await supabase
+        .from('studios')
+        .select('whatsapp_instance_id, whatsapp_token')
+        .eq('id', studioId)
+        .single();
+
+    if (!studio?.whatsapp_instance_id || !studio?.whatsapp_token) {
+        throw new Error('WhatsApp not configured for this studio');
+    }
+
+    const { whatsapp_instance_id: instanceId, whatsapp_token: token } = studio;
+
+    let sentCount = 0;
+    const total = clients.length;
+
+    for (const client of clients) {
+        const message = messageTemplate.replace('{{name}}', client.name.split(' ')[0]);
+
+        await sendMessage(instanceId, token, client.phone, message);
+
+        sentCount++;
+        if (onProgress) onProgress(sentCount, total);
+
+        if (sentCount < total) {
+            const randomDelay = Math.floor(Math.random() * (45000 - 15000 + 1)) + 15000;
+            console.log(`Anti-ban wait: ${randomDelay}ms`);
+            await delay(randomDelay);
+        }
+    }
+
+    return { success: true, sentCount };
+};
+
+/**
+ * Logs out the instance
+ */
+export const logoutInstance = async (instanceName: string, token: string) => {
+    try {
+        await axios.delete(`${cleanBaseUrl}/instance/logout/${instanceName}`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'apikey': SANITIZED_KEY
+            }
+        });
+        return { success: true };
+    } catch (error: any) {
+        console.error('[WhatsApp] Logout Failed:', error.response?.data || error.message);
+        return { success: false, error: error.response?.data || error };
+    }
+};
+
+
 export const whatsappService = {
-    getConnectionInfo,
-    sendText,
+    createInstance,
+    connectInstance,
+    getConnectionState, // Exported new function
+    sendMessage,
+    requestPairingCode, // Added export
+    provisionInstance,
     sendMassMessage,
-    provisionInstance
+    logoutInstance
 };

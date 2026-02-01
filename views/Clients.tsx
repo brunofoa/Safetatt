@@ -1,71 +1,41 @@
-import React, { useState, useMemo } from 'react';
-import { Client } from '../../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Client } from '../types';
 import NewClientModal from '../components/NewClientModal';
 import Avatar from '../components/Avatar';
+import { clientService } from '../services/clientService';
+import { useAuth } from '../contexts/AuthContext';
 
 
 interface ClientsProps {
   onEditClient: (clientId: string) => void;
 }
 
-
-const MOCK_CLIENTS: Client[] = [
-  {
-    id: 'c1',
-    name: 'Felix Ferguson',
-    email: 'felix.ferguson@email.com',
-    phone: '+55 11 9999-9999',
-    totalVisits: 12,
-    lastVisit: '24 Fev 2024',
-    totalSpent: 1250,
-    avatar: 'https://picsum.photos/seed/felix/100/100'
-  },
-  {
-    id: 'c2',
-    name: 'Aria Smith',
-    email: 'aria.smith@web.com',
-    phone: '+55 11 8888-8888',
-    totalVisits: 3,
-    lastVisit: '10 Jan 2024',
-    totalSpent: 450,
-    avatar: 'https://picsum.photos/seed/aria/100/100'
-  },
-  {
-    id: 'c3',
-    name: 'Marcus Volt',
-    email: 'm.volt@design.io',
-    phone: '+55 11 7777-7777',
-    totalVisits: 23,
-    lastVisit: '02 Fev 2024',
-    totalSpent: 3884,
-    avatar: 'https://picsum.photos/seed/marcus/100/100'
-  },
-  {
-    id: 'c4',
-    name: 'Elena Rodriguez',
-    email: 'elena.rod@gmail.com',
-    phone: '+55 11 6666-6666',
-    totalVisits: 8,
-    lastVisit: '15 Mar 2024',
-    totalSpent: 1100,
-    avatar: 'https://picsum.photos/seed/elena/100/100'
-  }
-];
-
 const parseDate = (dateStr: string) => {
+  // Basic parser for "DD Mmm YYYY" format - mainly for sorting
+  // If format changes from service, this might need update.
+  // However, service returns formatted string.
+  // Better to sort by raw date if available, but here we sort by string for display compatibility or re-parse.
+  // For simplicity, let's try to parse standard JS date string or custom format.
+  // Given service returns "dd MMM yyyy", we can keep this or improve.
+
   const months: { [key: string]: number } = {
     'Jan': 0, 'Fev': 1, 'Mar': 2, 'Abr': 3, 'Mai': 4, 'Jun': 5,
-    'Jul': 6, 'Ago': 7, 'Set': 8, 'Out': 9, 'Nov': 10, 'Dez': 11
+    'Jul': 6, 'Ago': 7, 'Set': 8, 'Out': 9, 'Nov': 10, 'Dez': 11,
+    'jan.': 0, 'fev.': 1, 'mar.': 2, 'abr.': 3, 'mai.': 4, 'jun.': 5, // handling potential locale variations
+    'jul.': 6, 'ago.': 7, 'set.': 8, 'out.': 9, 'nov.': 10, 'dez.': 11
   };
-  const parts = dateStr.split(' ');
+  const parts = dateStr.replace('.', '').split(' ');
   if (parts.length < 3) return new Date();
   const day = parseInt(parts[0], 10);
-  const month = months[parts[1]] || 0;
+  const month = months[parts[1]?.toLowerCase()] || 0;
   const year = parseInt(parts[2], 10);
   return new Date(year, month, day);
 };
 
 const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
+  const { currentStudio } = useAuth();
+  const [clients, setClients] = useState<Client[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
@@ -73,8 +43,42 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
   const [activeFilter, setActiveFilter] = useState<'all' | 'vip' | 'new'>('all');
   const [activeSort, setActiveSort] = useState<'name' | 'visits' | 'spent' | 'recent'>('name');
 
+  const fetchClients = async () => {
+    if (!currentStudio?.id) return;
+
+    setIsLoading(true);
+    try {
+      const data = await clientService.getClients(currentStudio.id);
+      setClients(data);
+    } catch (error) {
+      console.error("Failed to fetch clients", error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (currentStudio?.id) {
+      fetchClients();
+    }
+  }, [currentStudio?.id]);
+
+  // Global Refresh Listener
+  useEffect(() => {
+    const handleRefresh = () => {
+      if (currentStudio?.id) fetchClients();
+    };
+    window.addEventListener('refreshGlobalData', handleRefresh);
+    return () => window.removeEventListener('refreshGlobalData', handleRefresh);
+  }, [currentStudio?.id]);
+
+  const handleClientSaved = () => {
+    fetchClients();
+    // Optional: show toast
+  };
+
   const filteredClients = useMemo(() => {
-    let result = MOCK_CLIENTS.filter(c =>
+    let result = clients.filter(c =>
       c.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.email.toLowerCase().includes(searchTerm.toLowerCase())
     );
@@ -83,7 +87,7 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
     if (activeFilter === 'vip') {
       result = result.filter(c => c.totalSpent > 1000);
     } else if (activeFilter === 'new') {
-      result = result.filter(c => c.totalVisits <= 5);
+      result = result.filter(c => c.totalVisits <= 5); // Example criteria
     }
 
     // Apply Sort
@@ -94,6 +98,9 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
         case 'spent':
           return b.totalSpent - a.totalSpent;
         case 'recent':
+          // If 'lastVisit' is '-' (new client), handle gracefully
+          if (a.lastVisit === '-') return 1;
+          if (b.lastVisit === '-') return -1;
           return parseDate(b.lastVisit).getTime() - parseDate(a.lastVisit).getTime();
         case 'name':
         default:
@@ -102,7 +109,7 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
     });
 
     return result;
-  }, [searchTerm, activeFilter, activeSort]);
+  }, [clients, searchTerm, activeFilter, activeSort]);
 
   return (
     <div className="px-6 max-w-7xl mx-auto min-h-screen pb-20">
@@ -120,7 +127,7 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
         </button>
       </div>
 
-      <NewClientModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      <NewClientModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSuccess={handleClientSaved} />
 
       <div className="flex flex-col md:flex-row items-center gap-4 mb-8">
         <div className="relative w-full md:w-96 group">
@@ -186,12 +193,20 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
       </div>
 
       <div className="space-y-4">
-        {filteredClients.length > 0 ? (
+        {isLoading ? (
+          <div className="text-center py-20 text-gray-400 animate-pulse">
+            <p>Carregando clientes...</p>
+          </div>
+        ) : filteredClients.length > 0 ? (
           filteredClients.map((client) => (
             <div key={client.id} className="group bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 p-5 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-xl hover:border-primary/50 transition-all duration-300">
               <div className="flex items-center gap-5">
-                <div className="w-16 h-16 rounded-2xl overflow-hidden bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 flex-shrink-0">
-                  <img alt={client.name} src={client.avatar} className="w-full h-full object-cover" />
+                <div className="w-16 h-16 rounded-2xl overflow-hidden border border-gray-200 dark:border-zinc-700 flex-shrink-0">
+                  <Avatar
+                    name={client.name}
+                    src={client.avatar_url && !client.avatar_url.includes('ui-avatars') ? client.avatar_url : null}
+                    className="w-full h-full"
+                  />
                 </div>
                 <div>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-zinc-50 group-hover:text-primary transition-colors">{client.name}</h3>

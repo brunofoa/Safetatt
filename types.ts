@@ -15,7 +15,11 @@ export enum Screen {
   CLIENT_FINANCIAL = 'CLIENT_FINANCIAL',
   CLIENT_CARE = 'CLIENT_CARE',
   MARKETING = 'MARKETING',
-  LOYALTY = 'LOYALTY'
+  LOYALTY = 'LOYALTY',
+  // Admin Screens
+  ADMIN_DASHBOARD = 'ADMIN_DASHBOARD',
+  ADMIN_STUDIOS = 'ADMIN_STUDIOS',
+  ADMIN_NEW_STUDIO = 'ADMIN_NEW_STUDIO'
 }
 
 export type Role = 'MASTER' | 'ARTIST' | 'CLIENT';
@@ -34,10 +38,23 @@ export interface Studio {
   owner: string;
   role: Role;
   logo: string;
+  logo_url?: string; // Mapped from DB
   memberCount: number;
   loyaltyConfig?: LoyaltyConfig;
   whatsapp_instance_name?: string;
+  whatsapp_instance_id?: string;
+  whatsapp_token?: string;
   whatsapp_status?: string;
+  slug?: string;
+  cnpj?: string;
+  zip_code?: string;
+  address_street?: string;
+  address_number?: string;
+  city?: string;
+  state?: string;
+  contact_phone?: string;
+  contact_email?: string;
+  settings_anamnesis?: string[];
 }
 
 export interface Client {
@@ -48,7 +65,7 @@ export interface Client {
   totalVisits: number;
   lastVisit: string;
   totalSpent: number;
-  avatar: string;
+  avatar_url?: string;
   birthDate?: string;
   cpf?: string;
   rg?: string;
@@ -63,16 +80,92 @@ export interface Client {
   address?: string;
 }
 
+// Enum matching DB 'service_type'
+export enum ServiceType {
+  TATTOO = 'TATTOO',
+  PIERCING = 'PIERCING'
+}
+
 export interface Appointment {
   id: string;
   clientName: string;
   clientAvatar: string;
-  date: string;
-  time: string;
-  artist: string;
+  date: string; // ISO String for start_time
+  start_time: string; // Keep both for safety/refactor
+  end_time: string;
+
+  artist: string; // Mapped from 'professional' or joined artist table if needed, for now schema has 'artist_id' and 'professional' text? Schema said 'professional' text column AND 'artist_id' uuid.
+
   title: string;
-  description: string;
+  description: string; // Mapped from 'observations'
   status: 'Confirmado' | 'Pendente' | 'Finalizado' | 'Ausente' | 'Cancelado';
+
+  // Real DB Fields
+  clientId?: string;
+  studio_id?: string;
+  artist_id?: string;
+  service_type?: ServiceType | string;
+  price?: number;
+  payment_status?: string;
+  body_location?: string;
+  size?: string;
+  technical_details?: any; // jsonb
+  session_number?: number;
+  consent_signature_url?: string;
+  signature?: string; // New field added as per instruction
+
+  // Helpers
+  startTime?: string; // alias to start_time
+  endTime?: string; // alias to end_time
+  time?: string; // Formatted time string (e.g. "10:00 - 12:00")
+  artistColor?: string; // From profile display_color
+
+  photos?: string[];
+  tattooImage?: string | null;
+  value?: number | string;
+  dateObj?: Date;
+  bodyPart?: string; // Alias for body_location often used in UI
+
+  // New Fields
+  art_color?: string;
+}
+
+export interface Session {
+  id: string;
+  studio_id?: string;
+  client_id?: string;
+  professional_id?: string;
+  appointment_id?: string | null;
+  status: 'draft' | 'pending' | 'in_progress' | 'completed' | 'canceled';
+  title: string;
+  description?: string;
+  service_type: 'tattoo' | 'piercing';
+  body_location?: string;
+  art_color?: string;
+  size?: string;
+  price?: number;
+  photos_url?: string[];
+  consent_signature_url?: string;
+  performed_date?: string;
+  created_at?: string;
+
+  // Joins
+  clientName?: string;
+  artistName?: string;
+  artistColor?: string;
+  clients?: {
+    id: string;
+    full_name: string;
+    avatar_url?: string;
+    cpf?: string;
+    phone?: string;
+    email?: string;
+  };
+  profiles?: {
+    id: string;
+    full_name: string;
+    display_color?: string;
+  };
 }
 
 export type LoyaltyRewardType = 'PERCENTAGE' | 'FIXED';

@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Screen, User } from '../../types';
+import { Screen, User } from '../types';
 import FloatingHeader from './FloatingHeader';
 import NavigationDrawer from './NavigationDrawer';
 
