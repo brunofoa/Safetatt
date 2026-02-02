@@ -273,7 +273,7 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
     { id: 'dados', label: 'Dados do Cliente', icon: 'person' },
     { id: 'atendimentos', label: 'Lista de Atendimentos', icon: 'event' },
     { id: 'financeiro', label: 'Financeiro', icon: 'payments' },
-    { id: 'fidelidade', label: 'Fidelidade', icon: 'loyalty' },
+    { id: 'fidelidade', label: 'Cashback', icon: 'loyalty' },
     { id: 'observacoes', label: 'Observações', icon: 'description' },
   ];
 

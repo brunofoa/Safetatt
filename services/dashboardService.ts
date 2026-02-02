@@ -122,5 +122,62 @@ export const dashboardService = {
                 date: item.performed_date
             };
         });
+    },
+
+    async getUpcomingAppointments(studioId: string): Promise<AppointmentSession[]> {
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0]; // YYYY-MM-DD
+
+        // Fetch appointments from today onwards (simplified query)
+        const { data, error } = await supabase
+            .from('appointments')
+            .select(`
+                id,
+                scheduled_date,
+                scheduled_time,
+                appointment_type,
+                notes,
+                status,
+                clients (full_name)
+            `)
+            .eq('studio_id', studioId)
+            .gte('scheduled_date', todayStr)
+            .not('status', 'in', '("cancelled","completed")')
+            .order('scheduled_date', { ascending: true })
+            .order('scheduled_time', { ascending: true })
+            .limit(10); // Fetch more, then filter
+
+        if (error) {
+            console.error('Error fetching upcoming appointments:', error);
+            return [];
+        }
+
+        // Filter in JS: only future appointments (if today, must be after current time)
+        const now = new Date();
+        const filtered = data.filter((item: any) => {
+            const appointmentDate = new Date(`${item.scheduled_date}T${item.scheduled_time}`);
+            return appointmentDate >= now;
+        });
+
+        // Take only first 3
+        return filtered.slice(0, 3).map((item: any) => {
+            const date = new Date(`${item.scheduled_date}T${item.scheduled_time}`);
+            const isToday = new Date().toDateString() === date.toDateString();
+            const isTomorrow = new Date(new Date().setDate(new Date().getDate() + 1)).toDateString() === date.toDateString();
+
+            let dayLabel = 'Hoje';
+            if (!isToday) {
+                dayLabel = isTomorrow ? 'Amanhã' : date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+            }
+
+            return {
+                id: item.id,
+                clientName: item.clients?.full_name || 'Cliente',
+                time: date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }),
+                detail: item.appointment_type || item.notes || 'Agendamento',
+                day: dayLabel,
+                date: `${item.scheduled_date}T${item.scheduled_time}`
+            };
+        });
     }
 };

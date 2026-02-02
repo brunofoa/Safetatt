@@ -1,17 +1,21 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 
 interface NewStudioFormProps {
     onCancel: () => void;
     onSuccess: () => void;
+    initialData?: any; // Add initialData prop
 }
 
-const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) => {
+const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess, initialData }) => {
     const { user: currentUser } = useAuth();
     const [loading, setLoading] = useState(false);
-    const [step, setStep] = useState(1); // Visual step indicator if needed
+    const [step, setStep] = useState(1);
+
+    // Determine if editing
+    const isEditing = !!initialData;
 
     // Form State
     const [formData, setFormData] = useState({
@@ -38,6 +42,31 @@ const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) =>
             role: 'MASTER'
         }
     });
+
+    // Load Initial Data
+    useEffect(() => {
+        if (initialData) {
+            setFormData(prev => ({
+                ...prev,
+                studio: {
+                    name: initialData.name || '',
+                    slug: initialData.slug || '',
+                    cnpj: initialData.cnpj || '',
+                    zipCode: initialData.zip_code || '',
+                    street: initialData.address_street || '',
+                    number: initialData.address_number || '',
+                    neighborhood: initialData.address_neighborhood || '', // Assuming field name match or mapped
+                    city: initialData.city || '',
+                    state: initialData.state || '',
+                    phone: initialData.contact_phone || '',
+                    email: initialData.contact_email || ''
+                },
+                // We generally don't edit Master User here in the same way, or we pre-fill if we have it.
+                // For simplicity in this task, we might focus on Studio Data editing.
+                user: prev.user
+            }));
+        }
+    }, [initialData]);
 
     const [files, setFiles] = useState<{
         studioLogo: File | null;
@@ -131,9 +160,9 @@ const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) =>
     const validateForm = () => {
         if (!formData.studio.name || formData.studio.name.length < 3) return "Nome do estúdio inválido";
         if (!formData.studio.slug) return "Slug obrigatório";
-        if (!formData.user.firstName || !formData.user.lastName) return "Nome do usuário obrigatório";
-        if (!formData.user.email) return "Email do usuário obrigatório";
-        if (!formData.user.role) return "Perfil de acesso obrigatório";
+        if (!isEditing && (!formData.user.firstName || !formData.user.lastName)) return "Nome do usuário obrigatório";
+        if (!isEditing && !formData.user.email) return "Email do usuário obrigatório";
+        if (!isEditing && !formData.user.role) return "Perfil de acesso obrigatório";
         return null;
     };
 
@@ -147,6 +176,47 @@ const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) =>
         setLoading(true);
 
         try {
+            // EDIT MODE
+            if (isEditing) {
+                // Update Studio
+                const { error: updateError } = await supabase
+                    .from('studios')
+                    .update({
+                        name: formData.studio.name,
+                        slug: formData.studio.slug,
+                        cnpj: formData.studio.cnpj,
+                        zip_code: formData.studio.zipCode,
+                        address_street: formData.studio.street,
+                        address_number: formData.studio.number,
+                        city: formData.studio.city,
+                        state: formData.studio.state,
+                        contact_phone: formData.studio.phone,
+                        contact_email: formData.studio.email,
+                        // Update logo if changed (implementation needed for file upload in edit)
+                    })
+                    .eq('id', initialData.id);
+
+                if (updateError) throw updateError;
+
+                // Handle Logo Update if file selected
+                if (files.studioLogo) {
+                    const logoFileName = `studios/${Date.now()}_${files.studioLogo.name.replace(/[^a-zA-Z0-9.]/g, '')}`;
+                    const { error: uploadError } = await supabase.storage
+                        .from('studio-logos')
+                        .upload(logoFileName, files.studioLogo);
+
+                    if (!uploadError) {
+                        const { data } = supabase.storage.from('studio-logos').getPublicUrl(logoFileName);
+                        await supabase.from('studios').update({ logo_url: data.publicUrl }).eq('id', initialData.id);
+                    }
+                }
+
+                alert('Estúdio atualizado com sucesso!');
+                onSuccess();
+                return;
+            }
+
+            // CREATE MODE logic continues...
             // 0. Check Slug Uniqueness
             const { data: existingSlug } = await supabase.from('studios').select('id').eq('slug', formData.studio.slug).single();
             if (existingSlug) throw new Error("Slug já existe. Escolha outro.");
@@ -386,7 +456,7 @@ const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) =>
                 <button onClick={onCancel} className="text-zinc-400 hover:text-white">
                     <span className="material-icons">arrow_back</span>
                 </button>
-                <h1 className="text-xl md:text-2xl font-bold">Novo Estúdio e Master</h1>
+                <h1 className="text-xl md:text-2xl font-bold">{isEditing ? 'Editar Estúdio' : 'Novo Estúdio e Master'}</h1>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
@@ -491,23 +561,20 @@ const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) =>
                             </div>
                             <div className="col-span-1 md:col-span-2">
                                 <label className="text-xs text-zinc-400 mb-1 block">Estado</label>
-                                <select
+                                <input
                                     value={formData.studio.state}
                                     onChange={(e) => handleStudioChange('state', e.target.value)}
-                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                                >
-                                    <option value="">UF</option>
-                                    <option value="SP">SP</option>
-                                    <option value="RJ">RJ</option>
-                                    {/* Add others as needed */}
-                                </select>
+                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 text-sm outline-none focus:border-purple-500 transition-colors uppercase"
+                                    placeholder="UF"
+                                    maxLength={2}
+                                />
                             </div>
                         </div>
                     </div>
 
                     <div className="border-t border-zinc-700/50 pt-4">
                         <h3 className="text-sm font-bold text-zinc-300 mb-3">Contatos</h3>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="text-xs text-zinc-400 mb-1 block">Telefone</label>
                                 <input
@@ -528,103 +595,105 @@ const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) =>
                     </div>
                 </div>
 
-                {/* MASTER USER SECTION */}
-                <div className="space-y-6 bg-zinc-800/30 p-6 rounded-2xl border border-zinc-700/50">
-                    <h2 className="text-xl font-bold text-[#5CDFF0] flex items-center gap-2">
-                        <span className="material-icons">person_add</span>
-                        Dados do Usuário Master
-                    </h2>
+                {/* MASTER USER SECTION - Hide if editing for now, or make optional/readonly */}
+                {!isEditing && (
+                    <div className="space-y-6 bg-zinc-800/30 p-6 rounded-2xl border border-zinc-700/50">
+                        <h2 className="text-xl font-bold text-[#5CDFF0] flex items-center gap-2">
+                            <span className="material-icons">person_add</span>
+                            Dados do Usuário Master
+                        </h2>
 
-                    {/* Photo Upload */}
-                    <div className="flex items-center gap-4">
-                        <div className="w-20 h-20 rounded-full bg-zinc-800 border-2 border-dashed border-zinc-600 flex items-center justify-center overflow-hidden relative group">
-                            {files.userPhoto ? (
-                                <img src={URL.createObjectURL(files.userPhoto)} alt="Avatar" className="w-full h-full object-cover" />
-                            ) : (
-                                <span className="material-icons text-zinc-600">person</span>
-                            )}
-                            <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => handleFileChange('userPhoto', e.target.files?.[0] || null)}
-                                className="absolute inset-0 opacity-0 cursor-pointer"
-                            />
-                        </div>
-                        <div>
-                            <p className="text-sm font-bold">Foto de Perfil</p>
-                        </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div className="col-span-1">
-                            <label className="text-xs text-zinc-400 font-bold mb-1 block">Nome *</label>
-                            <input
-                                value={formData.user.firstName}
-                                onChange={(e) => handleUserChange('firstName', e.target.value)}
-                                className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 transition-colors"
-                            />
-                        </div>
-                        <div className="col-span-1">
-                            <label className="text-xs text-zinc-400 font-bold mb-1 block">Sobrenome *</label>
-                            <input
-                                value={formData.user.lastName}
-                                onChange={(e) => handleUserChange('lastName', e.target.value)}
-                                className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 transition-colors"
-                            />
-                        </div>
-                        <div className="col-span-2">
-                            <label className="text-xs text-zinc-400 font-bold mb-1 block">E-mail de Acesso *</label>
-                            <input
-                                type="email"
-                                value={formData.user.email}
-                                onChange={(e) => handleUserChange('email', e.target.value)}
-                                className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 transition-colors"
-                            />
-                        </div>
-                        <div className="col-span-1">
-                            <label className="text-xs text-zinc-400 font-bold mb-1 block">Celular/WhatsApp</label>
-                            <input
-                                value={formData.user.phone}
-                                onChange={(e) => handleUserChange('phone', e.target.value)}
-                                className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2"
-                            />
-                        </div>
-                        <div className="col-span-1">
-                            <label className="text-xs text-zinc-400 font-bold mb-1 block">CPF</label>
-                            <input
-                                value={formData.user.cpf}
-                                onChange={(e) => handleUserChange('cpf', e.target.value)}
-                                className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2"
-                            />
-                        </div>
-                        <div className="col-span-2">
-                            <label className="text-xs text-zinc-400 font-bold mb-1 block">Cor de Identificação</label>
-                            <div className="flex items-center gap-3">
+                        {/* Photo Upload */}
+                        <div className="flex items-center gap-4">
+                            <div className="w-20 h-20 rounded-full bg-zinc-800 border-2 border-dashed border-zinc-600 flex items-center justify-center overflow-hidden relative group">
+                                {files.userPhoto ? (
+                                    <img src={URL.createObjectURL(files.userPhoto)} alt="Avatar" className="w-full h-full object-cover" />
+                                ) : (
+                                    <span className="material-icons text-zinc-600">person</span>
+                                )}
                                 <input
-                                    type="color"
-                                    value={formData.user.color}
-                                    onChange={(e) => handleUserChange('color', e.target.value)}
-                                    className="w-10 h-10 rounded cursor-pointer border-0 p-0"
+                                    type="file"
+                                    accept="image/*"
+                                    onChange={(e) => handleFileChange('userPhoto', e.target.files?.[0] || null)}
+                                    className="absolute inset-0 opacity-0 cursor-pointer"
                                 />
-                                <span className="text-sm text-zinc-400 uppercase">{formData.user.color}</span>
+                            </div>
+                            <div>
+                                <p className="text-sm font-bold">Foto de Perfil</p>
                             </div>
                         </div>
 
-                        <div className="col-span-2">
-                            <label className="text-xs text-zinc-400 font-bold mb-1 block">Perfil de Acesso *</label>
-                            <select
-                                value={formData.user.role}
-                                onChange={(e) => handleUserChange('role', e.target.value)}
-                                className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 text-sm"
-                            >
-                                <option value="MASTER">Master (Admin do Estúdio)</option>
-                                <option value="ARTIST">Tatuador</option>
-                                <option value="PIERCER">Piercer</option>
-                                <option value="RECEPTIONIST">Recepcionista</option>
-                            </select>
+                        <div className="grid grid-cols-1 gap-4">
+                            <div>
+                                <label className="text-xs text-zinc-400 font-bold mb-1 block">Nome *</label>
+                                <input
+                                    value={formData.user.firstName}
+                                    onChange={(e) => handleUserChange('firstName', e.target.value)}
+                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-zinc-400 font-bold mb-1 block">Sobrenome *</label>
+                                <input
+                                    value={formData.user.lastName}
+                                    onChange={(e) => handleUserChange('lastName', e.target.value)}
+                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-zinc-400 font-bold mb-1 block">E-mail de Acesso *</label>
+                                <input
+                                    type="email"
+                                    value={formData.user.email}
+                                    onChange={(e) => handleUserChange('email', e.target.value)}
+                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 outline-none focus:border-indigo-500 transition-colors"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-zinc-400 font-bold mb-1 block">Celular/WhatsApp</label>
+                                <input
+                                    value={formData.user.phone}
+                                    onChange={(e) => handleUserChange('phone', e.target.value)}
+                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-zinc-400 font-bold mb-1 block">CPF</label>
+                                <input
+                                    value={formData.user.cpf}
+                                    onChange={(e) => handleUserChange('cpf', e.target.value)}
+                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-zinc-400 font-bold mb-1 block">Cor de Identificação</label>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="color"
+                                        value={formData.user.color}
+                                        onChange={(e) => handleUserChange('color', e.target.value)}
+                                        className="w-10 h-10 rounded cursor-pointer border-0 p-0"
+                                    />
+                                    <span className="text-sm text-zinc-400 uppercase">{formData.user.color}</span>
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="text-xs text-zinc-400 font-bold mb-1 block">Perfil de Acesso *</label>
+                                <select
+                                    value={formData.user.role}
+                                    onChange={(e) => handleUserChange('role', e.target.value)}
+                                    className="w-full bg-zinc-900 border-zinc-700 rounded-lg px-3 py-2 text-sm"
+                                >
+                                    <option value="MASTER">Master (Admin do Estúdio)</option>
+                                    <option value="ARTIST">Tatuador</option>
+                                    <option value="PIERCER">Piercer</option>
+                                    <option value="RECEPTIONIST">Recepcionista</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
-                </div>
+                )}
             </div>
 
             <div className="flex justify-end gap-3 mt-8 max-w-6xl mx-auto">
@@ -648,7 +717,7 @@ const NewStudioForm: React.FC<NewStudioFormProps> = ({ onCancel, onSuccess }) =>
                     ) : (
                         <>
                             <span className="material-icons">check</span>
-                            Criar Estúdio e Master
+                            {isEditing ? 'Salvar Alterações' : 'Criar Estúdio e Master'}
                         </>
                     )}
                 </button>

@@ -65,7 +65,7 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({ user, currentScreen
         { label: 'Atendimentos', screen: Screen.APPOINTMENTS, icon: <FileText size={24} weight="duotone" /> },
         { label: 'Clientes', screen: Screen.CLIENTS, icon: <Users size={24} weight="duotone" /> },
         { label: 'Marketing', screen: Screen.MARKETING, icon: <Megaphone size={24} weight="duotone" /> },
-        { label: 'Fidelidade', screen: Screen.LOYALTY, icon: <Ticket size={24} weight="duotone" /> },
+        { label: 'Cashback', screen: Screen.LOYALTY, icon: <Ticket size={24} weight="duotone" /> },
         { label: 'Configurações', screen: Screen.SETTINGS, icon: <Gear size={24} weight="duotone" /> },
     ];
 

@@ -11,25 +11,42 @@ interface ClientsProps {
 }
 
 const parseDate = (dateStr: string) => {
-  // Basic parser for "DD Mmm YYYY" format - mainly for sorting
-  // If format changes from service, this might need update.
-  // However, service returns formatted string.
-  // Better to sort by raw date if available, but here we sort by string for display compatibility or re-parse.
-  // For simplicity, let's try to parse standard JS date string or custom format.
-  // Given service returns "dd MMM yyyy", we can keep this or improve.
+  // Basic parser for "DD Mmm YYYY" or "DD/MM/YYYY" or ISO
+  if (!dateStr || dateStr === '-') return new Date(0);
 
   const months: { [key: string]: number } = {
     'Jan': 0, 'Fev': 1, 'Mar': 2, 'Abr': 3, 'Mai': 4, 'Jun': 5,
     'Jul': 6, 'Ago': 7, 'Set': 8, 'Out': 9, 'Nov': 10, 'Dez': 11,
-    'jan.': 0, 'fev.': 1, 'mar.': 2, 'abr.': 3, 'mai.': 4, 'jun.': 5, // handling potential locale variations
+    'jan.': 0, 'fev.': 1, 'mar.': 2, 'abr.': 3, 'mai.': 4, 'jun.': 5,
     'jul.': 6, 'ago.': 7, 'set.': 8, 'out.': 9, 'nov.': 10, 'dez.': 11
   };
+
+  // Try split by slash
+  if (dateStr.includes('/')) {
+    const parts = dateStr.split('/');
+    if (parts.length === 3) {
+      // Assuming DD/MM/YYYY
+      return new Date(parseInt(parts[2]), parseInt(parts[1]) - 1, parseInt(parts[0]));
+    }
+  }
+
   const parts = dateStr.replace('.', '').split(' ');
   if (parts.length < 3) return new Date();
   const day = parseInt(parts[0], 10);
   const month = months[parts[1]?.toLowerCase()] || 0;
   const year = parseInt(parts[2], 10);
   return new Date(year, month, day);
+};
+
+const formatDateCompact = (dateStr: string) => {
+  if (!dateStr || dateStr === '-') return '-';
+  try {
+    const date = parseDate(dateStr);
+    // Format to dd/MM/yy
+    return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: '2-digit', year: '2-digit' }).format(date);
+  } catch (e) {
+    return dateStr;
+  }
 };
 
 const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
@@ -199,43 +216,40 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
           </div>
         ) : filteredClients.length > 0 ? (
           filteredClients.map((client) => (
-            <div key={client.id} className="group bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 p-5 rounded-xl flex flex-col md:flex-row md:items-center justify-between gap-6 hover:shadow-xl hover:border-primary/50 transition-all duration-300">
-              <div className="flex items-center gap-5">
-                <div className="w-16 h-16 rounded-2xl overflow-hidden border border-gray-200 dark:border-zinc-700 flex-shrink-0">
-                  <Avatar
-                    name={client.name}
-                    src={client.avatar_url && !client.avatar_url.includes('ui-avatars') ? client.avatar_url : null}
-                    className="w-full h-full"
-                  />
+            <div key={client.id} className="group bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 p-3 md:p-4 rounded-xl flex flex-row items-center gap-4 hover:shadow-xl hover:border-primary/50 transition-all duration-300">
+              {/* Left: Avatar */}
+              <div className="w-12 h-12 rounded-full overflow-hidden border border-gray-200 dark:border-zinc-700 flex-shrink-0">
+                <Avatar
+                  name={client.name}
+                  src={client.avatar_url && !client.avatar_url.includes('ui-avatars') ? client.avatar_url : null}
+                  className="w-full h-full"
+                />
+              </div>
+
+              {/* Center: Info */}
+              <div className="flex-1 min-w-0 flex flex-col justify-center">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-bold text-gray-900 dark:text-zinc-50 truncate group-hover:text-primary transition-colors leading-tight">
+                    {client.name}
+                  </h3>
                 </div>
-                <div>
-                  <h3 className="text-xl font-bold text-gray-900 dark:text-zinc-50 group-hover:text-primary transition-colors">{client.name}</h3>
-                  <p className="text-gray-500 dark:text-zinc-400 text-sm font-medium">{client.email}</p>
+                <p className="text-xs text-gray-500 dark:text-zinc-400 truncate mb-0.5">{client.email}</p>
+
+                {/* Metrics Line */}
+                <div className="flex items-center gap-2 text-[10px] text-gray-400 dark:text-zinc-500 font-medium whitespace-nowrap">
+                  <span>🎯 {client.totalVisits} sessões</span>
+                  <span className="text-gray-300 dark:text-zinc-700">|</span>
+                  <span>🕒 {formatDateCompact(client.lastVisit)}</span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-8 md:gap-16">
-                <div>
-                  <p className="text-[10px] tracking-widest font-bold text-gray-400 dark:text-zinc-500 mb-1">Total de Visitas</p>
-                  <p className="font-bold text-gray-900 dark:text-zinc-50">{client.totalVisits} Sessões</p>
-                </div>
-                <div>
-                  <p className="text-[10px] tracking-widest font-bold text-gray-400 dark:text-zinc-500 mb-1">Última Visita</p>
-                  <p className="font-bold text-gray-900 dark:text-zinc-50">{client.lastVisit}</p>
-                </div>
-                <div className="hidden md:block">
-                  <p className="text-[10px] tracking-widest font-bold text-gray-400 dark:text-zinc-500 mb-1">Total Gasto</p>
-                  <p className="font-bold text-gray-900 dark:text-zinc-50">R$ {client.totalSpent.toLocaleString()}</p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2">
-                {/* History button removed as requested */}
+              {/* Right: Actions */}
+              <div className="flex-shrink-0 ml-auto self-start md:self-center">
                 <button
                   onClick={() => onEditClient(client.id)}
-                  className="p-3 bg-gray-100 dark:bg-zinc-800 dark:text-zinc-400 hover:bg-primary hover:text-black rounded-xl transition-all"
+                  className="p-2 text-gray-400 hover:text-primary transition-colors rounded-full hover:bg-white/5"
                 >
-                  <span className="material-icons">edit</span>
+                  <span className="material-icons text-xl">edit</span>
                 </button>
               </div>
             </div>

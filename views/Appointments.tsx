@@ -262,7 +262,7 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
               Ordenar
             </button>
             {showSortMenu && (
-              <div className="absolute top-full right-0 mt-2 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-gray-200 dark:border-zinc-800 overflow-hidden z-20 animate-fade-in-up">
+              <div className="absolute top-full left-0 md:left-auto md:right-0 mt-2 w-48 bg-white dark:bg-zinc-900 rounded-xl shadow-xl border border-gray-200 dark:border-zinc-800 overflow-hidden z-20 animate-fade-in-up">
                 <button onClick={() => { setSortOrder('desc'); setShowSortMenu(false); }} className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 dark:text-zinc-50 border-b border-gray-100 dark:border-zinc-800/50 ${sortOrder === 'desc' ? 'text-primary' : ''}`}>Mais Recente</button>
                 <button onClick={() => { setSortOrder('asc'); setShowSortMenu(false); }} className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 dark:text-zinc-50 ${sortOrder === 'asc' ? 'text-primary' : ''}`}>Mais Antigo</button>
               </div>

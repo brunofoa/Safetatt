@@ -119,7 +119,7 @@ const Loyalty: React.FC<LoyaltyProps> = ({ onViewClientProfile }) => {
             {/* Header */}
             <div className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
                 <div>
-                    <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50 mb-2">Fidelidade & Cashback</h1>
+                    <h1 className="text-4xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50 mb-2">Cashback</h1>
                     <p className="text-gray-500 dark:text-zinc-400 font-medium">Gestão de saldo e recompensas dos clientes</p>
                 </div>
                 <button className="bg-slate-800 dark:bg-zinc-50 dark:text-black text-white font-bold py-3 px-6 rounded-xl shadow-lg flex items-center gap-2 hover:opacity-90 transition-opacity">

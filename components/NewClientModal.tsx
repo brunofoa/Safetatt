@@ -90,8 +90,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                 <span className="w-1 h-6 bg-primary rounded-full"></span>
                                 Dados Pessoais
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {/* Row 1: Name & Surname */}
                                 <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Nome</label>
                                     <input
@@ -100,11 +100,11 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="Primeiro nome"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div className="col-span-2">
+                                <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Sobrenome</label>
                                     <input
                                         name="lastName"
@@ -112,22 +112,12 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="Sobrenome completo"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Data de Nascimento</label>
-                                    <input
-                                        name="birthDate"
-                                        value={formData.birthDate}
-                                        onChange={handleChange}
-                                        type="date"
-                                        className="input-field"
-                                    />
-                                </div>
-
-                                <div>
+                                {/* Row 2: CPF & BirthDate */}
+                                <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">CPF</label>
                                     <input
                                         name="cpf"
@@ -135,11 +125,35 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="000.000.000-00"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div>
+                                <div className="col-span-1">
+                                    <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Data de Nascimento</label>
+                                    <input
+                                        name="birthDate"
+                                        value={formData.birthDate}
+                                        onChange={handleChange}
+                                        type="date"
+                                        className="input-field w-full"
+                                    />
+                                </div>
+
+                                {/* Row 3: Phone (Moved up) & RG */}
+                                <div className="col-span-1">
+                                    <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Celular / WhatsApp</label>
+                                    <input
+                                        name="phone"
+                                        value={formData.phone}
+                                        onChange={handleChange}
+                                        type="tel"
+                                        placeholder="(00) 00000-0000"
+                                        className="input-field w-full"
+                                    />
+                                </div>
+
+                                <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">RG / Passaporte</label>
                                     <input
                                         name="rg"
@@ -147,11 +161,12 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="Registro Geral"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div className="col-span-1 md:col-span-3">
+                                {/* Row 4: Profession */}
+                                <div className="col-span-1 md:col-span-2">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Profissão</label>
                                     <input
                                         name="profession"
@@ -159,10 +174,9 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="Ex: Designer Gráfico"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
-
                             </div>
                         </section>
 
@@ -172,11 +186,11 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                         <section>
                             <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
                                 <span className="w-1 h-6 bg-secondary rounded-full"></span>
-                                Contato & Social
+                                Social & Outros
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
-                                <div>
+                                <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">E-mail</label>
                                     <input
                                         name="email"
@@ -184,31 +198,19 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="email"
                                         placeholder="email@exemplo.com"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Telefone</label>
-                                    <input
-                                        name="phone"
-                                        value={formData.phone}
-                                        onChange={handleChange}
-                                        type="tel"
-                                        placeholder="(00) 00000-0000"
-                                        className="input-field"
-                                    />
-                                </div>
-
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Rede Social</label>
+                                <div className="col-span-1">
+                                    <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Instagram</label>
                                     <input
                                         name="instagram"
                                         value={formData.instagram}
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="@instagram"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
@@ -222,7 +224,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                             <h3 className="text-lg font-bold text-gray-900 dark:text-zinc-100 mb-4 flex items-center gap-2">
                                 Endereço Completo
                             </h3>
-                            <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+                            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
 
                                 <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">CEP</label>
@@ -232,7 +234,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="00000-000"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
@@ -244,7 +246,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="Rua, Av."
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
@@ -256,11 +258,11 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="123"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div className="col-span-2">
+                                <div className="col-span-1 md:col-span-2">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Bairro</label>
                                     <input
                                         name="neighborhood"
@@ -268,11 +270,11 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="Bairro"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div>
+                                <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Cidade</label>
                                     <input
                                         name="city"
@@ -280,19 +282,19 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                                         onChange={handleChange}
                                         type="text"
                                         placeholder="Cidade"
-                                        className="input-field"
+                                        className="input-field w-full"
                                     />
                                 </div>
 
-                                <div>
+                                <div className="col-span-1">
                                     <label className="block text-xs font-bold text-gray-500 mb-2 ml-1">Estado</label>
                                     <input
                                         name="state"
                                         value={formData.state}
                                         onChange={handleChange}
                                         type="text"
-                                        placeholder="Estado"
-                                        className="input-field"
+                                        placeholder="UF"
+                                        className="input-field w-full"
                                     />
                                 </div>
 

@@ -455,11 +455,11 @@ const Settings: React.FC = () => {
     { id: 'anamnese', label: 'Anamnese', icon: 'content_paste' },
     { id: 'whatsapp', label: 'Whatsapp', icon: 'chat' },
     { id: 'mensagem', label: 'Mensagem', icon: 'email' },
-    { id: 'fidelidade', label: 'Fidelidade', icon: 'loyalty' },
+    { id: 'fidelidade', label: 'Cashback', icon: 'loyalty' },
   ];
 
   return (
-    <div className="max-w-6xl mx-auto px-6">
+    <div className="max-w-6xl mx-auto px-4 md:px-6">
       <h1 className="text-2xl font-bold mb-8 dark:text-zinc-50">Configurações do Estúdio</h1>
 
       <nav className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm mb-8 overflow-hidden border border-[#333333] dark:border-zinc-800">
@@ -481,7 +481,7 @@ const Settings: React.FC = () => {
         </ul>
       </nav>
 
-      <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-[#333333] dark:border-zinc-800 p-8 space-y-12">
+      <div className="bg-white dark:bg-zinc-900 rounded-xl shadow-sm border border-[#333333] dark:border-zinc-800 p-5 md:p-8 space-y-12">
         {activeTab === 'dados' && (
           <section className="animate-fade-in">
             <h2 className="text-xl font-bold mb-6 flex items-center text-gray-900 dark:text-zinc-50">
@@ -491,9 +491,9 @@ const Settings: React.FC = () => {
             <div className="space-y-8">
               {/* Main Info */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
-                <div className="md:col-span-2">
+                <div className="md:col-span-2 flex flex-col items-center md:items-start">
                   <label className="text-xs font-bold text-gray-500 dark:text-zinc-400 mb-2 block">Logo do Estúdio</label>
-                  <label className="border-2 border-dashed border-gray-200 dark:border-zinc-800 rounded-2xl p-2 flex flex-col items-center justify-center w-full aspect-square group cursor-pointer hover:border-primary transition-colors relative overflow-hidden">
+                  <label className="border-2 border-dashed border-gray-200 dark:border-zinc-800 rounded-2xl p-2 flex flex-col items-center justify-center w-32 h-32 md:w-full md:aspect-square group cursor-pointer hover:border-primary transition-colors relative overflow-hidden">
                     <input type="file" className="hidden" accept="image/*" onChange={handleLogoUpload} />
                     {logoPreview ? (
                       <img src={logoPreview} alt="Logo Preview" className="w-full h-full object-cover rounded-xl" />
@@ -534,7 +534,7 @@ const Settings: React.FC = () => {
                   </div>
                   <div>
                     <label className="text-xs font-bold text-gray-500 dark:text-zinc-400 mb-2 block tracking-wide">Link Cadastro Cliente</label>
-                    <div className="flex gap-2">
+                    <div className="flex flex-col md:flex-row gap-2">
                       <div className="flex-1 flex flex-col">
                         <div className="flex items-center bg-gray-50 dark:bg-zinc-800/50 border border-gray-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-sm text-gray-600 dark:text-zinc-400 overflow-hidden">
                           <span className="text-gray-500 mr-1 whitespace-nowrap">{window.location.origin}/cadastro/</span>
@@ -681,236 +681,239 @@ const Settings: React.FC = () => {
         )}
 
         {activeTab === 'whatsapp' && (
-          <section>
-            <div className="p-8 grid md:grid-cols-2 gap-12">
-              <div className="space-y-8">
-                <h2 className="text-xl font-bold flex items-center gap-2 text-gray-900 dark:text-zinc-50">
-                  <span className="material-icons text-green-500">whatsapp</span>
-                  Configuração do WhatsApp
-                </h2>
+          <section className="animate-fade-in">
+            <h2 className="text-lg md:text-xl font-bold flex items-center flex-wrap gap-2 text-gray-900 dark:text-zinc-50 mb-6">
+              <span className="material-icons text-green-500 shrink-0">whatsapp</span>
+              <span>Configuração do WhatsApp</span>
+            </h2>
+            <div className="space-y-8 w-full">
 
-                {/* GLOBAL DEBUG DISPLAY */}
-                <div className="mb-6 p-4 bg-gray-100 border border-gray-300 rounded-xl font-mono text-xs overflow-hidden">
-                  <p className="font-bold text-gray-700 mb-2">🔧 Debug Info (Envie um print disso):</p>
-                  <div className="grid grid-cols-2 gap-2 mb-2">
-                    <div>Status: <span className="font-bold">{connectionStatus}</span></div>
-                    <div>QR Length: {qrCode ? qrCode.length : '0'}</div>
-                    <div className="col-span-2">Instance: {currentStudio?.whatsapp_instance_name || waCredentials.instanceName || 'N/A'}</div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-12 w-full">
+                <div className="flex flex-col gap-8 w-full">
+
+                  {/* GLOBAL DEBUG DISPLAY */}
+                  <div className="mb-6 p-4 bg-gray-100 border border-gray-300 rounded-xl font-mono text-xs overflow-hidden">
+                    <p className="font-bold text-gray-700 mb-2">🔧 Debug Info (Envie um print disso):</p>
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <div>Status: <span className="font-bold">{connectionStatus}</span></div>
+                      <div>QR Length: {qrCode ? qrCode.length : '0'}</div>
+                      <div className="col-span-2">Instance: {currentStudio?.whatsapp_instance_name || waCredentials.instanceName || 'N/A'}</div>
+                    </div>
+                    {debugData && (
+                      <div className="mt-2 pt-2 border-t border-gray-200">
+                        <p className="font-bold text-gray-600 mb-1">Raw Response:</p>
+                        <pre className="overflow-x-auto max-h-32 bg-white p-2 rounded border border-gray-200 text-[10px] whitespace-pre-wrap">
+                          {JSON.stringify(debugData, null, 2)}
+                        </pre>
+                      </div>
+                    )}
                   </div>
-                  {debugData && (
-                    <div className="mt-2 pt-2 border-t border-gray-200">
-                      <p className="font-bold text-gray-600 mb-1">Raw Response:</p>
-                      <pre className="overflow-auto max-h-32 bg-white p-2 rounded border border-gray-200 text-[10px]">
-                        {JSON.stringify(debugData, null, 2)}
-                      </pre>
+
+                  {/* Show Activation Card only if NO instance in Studio AND NO local instance */}
+                  {(!currentStudio?.whatsapp_instance_name && !waCredentials.instanceName) ? (
+                    <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-6 md:p-8 text-center">
+                      {/* ... icon/text ... */}
+                      <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center mx-auto mb-4">
+                        <span className="material-icons text-3xl text-blue-600 dark:text-blue-400">rocket_launch</span>
+                      </div>
+                      <h3 className="font-bold text-lg text-gray-900 dark:text-zinc-50 mb-2">Ativar Integração WhatsApp</h3>
+                      <p className="text-sm text-gray-600 dark:text-zinc-400 mb-6 max-w-md mx-auto">
+                        Automatize o envio de lembretes e fidelize seus clientes. Clique abaixo para ativar.
+                      </p>
+
+                      <div className="mb-4 max-w-xs mx-auto text-left">
+                        <label className="text-xs font-bold text-gray-400 dark:text-zinc-500 mb-1 block">Nome da Instância (Opcional)</label>
+                        <input
+                          type="text"
+                          placeholder={currentStudio?.name ? `Ex: ${generateSlug(currentStudio.name).replace(/-/g, '_')}` : 'nome_instancia'}
+                          className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
+                          onChange={(e) => setWaCredentials(prev => ({ ...prev, manualInstanceName: e.target.value }))}
+                        />
+                        <p className="text-[10px] text-gray-400 mt-1">Deixe em branco para gerar automaticamente.</p>
+                      </div>
+
+                      <button
+                        onClick={async () => {
+                          if (!currentStudio?.id || !currentStudio?.name) return;
+                          // ... logic updated below ...
+                          const targetName = waCredentials.manualInstanceName || currentStudio.name;
+
+                          if (!confirm(`Deseja conectar à instância "${targetName}"?`)) return;
+
+                          setLoadingQr(true);
+                          try {
+                            // 1. Provision (Updated to handle raw names if manual)
+                            const res = await whatsappService.provisionInstance(targetName, currentStudio.id);
+
+                            if (res.success && res.instanceName) {
+                              // 2. Refresh Token from DB
+                              const { data: freshStudio } = await supabase
+                                .from('studios')
+                                .select('*')
+                                .eq('id', currentStudio.id)
+                                .single();
+
+                              if (freshStudio?.whatsapp_token) {
+                                // UPDATE LOCAL STATE so UI updates immediately without reload
+                                setWaCredentials({
+                                  instanceId: freshStudio.whatsapp_instance_id,
+                                  token: freshStudio.whatsapp_token,
+                                  instanceName: res.instanceName
+                                });
+
+                                // 3. Connect for QR
+                                const connectRes = await whatsappService.connectInstance(freshStudio.whatsapp_token);
+
+                                setDebugData({
+                                  ...connectRes.debug,
+                                  _client_check: {
+                                    token_prefix: freshStudio.whatsapp_token?.substring(0, 5),
+                                    has_global_key: !!import.meta.env.VITE_WHATSAPP_GLOBAL_KEY
+                                  }
+                                }); // Show Debug Info Immediately
+
+                                if (connectRes.qrCode) {
+                                  setQrCode(connectRes.qrCode);
+                                  setConnectionStatus('DISCONNECTED');
+                                } else if (connectRes.status === 'CONNECTED') {
+                                  setConnectionStatus('CONNECTED');
+                                }
+
+                                alert('Instância criada! Escaneie o QR Code ao lado.');
+                                // REMOVED: window.location.reload(); 
+                              }
+                            } else {
+                              const errorMsg = res.error?.response?.data?.message || res.error?.message || JSON.stringify(res.error);
+                              alert(`Erro ao criar instância: ${errorMsg}`);
+                            }
+                          } catch (err: any) {
+                            console.error('Erro detalhado:', err);
+                            alert(`Erro: ${err.message || 'Desconhecido'}`);
+                          } finally {
+                            setLoadingQr(false);
+                          }
+                        }}
+                        disabled={loadingQr}
+                        className="bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold py-3 px-8 rounded-xl shadow-lg shadow-[#92FFAD]/20 transition-all flex items-center justify-center gap-2 mx-auto disabled:opacity-50 hover:scale-105"
+                      >
+                        {loadingQr ? (
+                          <>
+                            <span className="material-icons animate-spin text-sm">sync</span>
+                            Configurando...
+                          </>
+                        ) : (
+                          <>
+                            <span className="material-icons">power_settings_new</span>
+                            Ativar Agora
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      <div>
+                        <label className="text-xs font-bold text-gray-500 dark:text-zinc-400 mb-2 block">Nome da Instância</label>
+                        <input
+                          className="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 focus:ring-2 focus:ring-primary outline-none cursor-not-allowed"
+                          value={currentStudio?.whatsapp_instance_name || waCredentials.instanceName || ''}
+                          disabled
+                          type="text"
+                        />
+                      </div>
+
+                      <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-zinc-800 rounded-xl border border-gray-200 dark:border-zinc-800">
+                        <div>
+                          <p className="font-semibold text-sm text-gray-900 dark:text-zinc-50">Status da Conexão</p>
+                          <p className="text-xs text-gray-500 dark:text-zinc-400">
+                            {connectionStatus === 'CONNECTED' ? 'Conectado e pronto para envio' : connectionStatus === 'CONNECTING' ? 'Tentando conectar...' : 'Aguardando leitura do QR Code'}
+                          </p>
+                        </div>
+                        <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${connectionStatus === 'CONNECTED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          <span className={`w-2 h-2 rounded-full ${connectionStatus === 'CONNECTED' ? 'bg-green-500' : 'bg-red-500'}`}></span>
+                          {connectionStatus === 'CONNECTED' ? 'ONLINE' : 'OFFLINE'}
+                        </div>
+                      </div>
+
+                      {connectionStatus === 'CONNECTED' && (
+                        <div className="flex flex-col gap-3">
+                          <button
+                            onClick={handleSendTest}
+                            disabled={loadingQr}
+                            className="w-full bg-[#333333] hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            <span className="material-icons text-sm">send</span>
+                            {loadingQr ? 'Enviando...' : 'Enviar Mensagem de Teste'}
+                          </button>
+
+                          <button
+                            onClick={handleDisconnect}
+                            disabled={loadingQr}
+                            className="w-full bg-red-100 hover:bg-red-200 text-red-600 font-bold py-3 px-6 rounded-xl border border-red-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          >
+                            <span className="material-icons text-sm">logout</span>
+                            Desconectar
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
 
-                {/* Show Activation Card only if NO instance in Studio AND NO local instance */}
-                {(!currentStudio?.whatsapp_instance_name && !waCredentials.instanceName) ? (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-xl p-8 text-center">
-                    {/* ... icon/text ... */}
-                    <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/40 rounded-full flex items-center justify-center mx-auto mb-4">
-                      <span className="material-icons text-3xl text-blue-600 dark:text-blue-400">rocket_launch</span>
+                <div className="flex flex-col items-center justify-center border-2 border-dashed border-[#333333] dark:border-zinc-800 rounded-2xl p-8 bg-gray-50 dark:bg-zinc-900/50 text-center relative overflow-hidden h-[400px]">
+                  {(!currentStudio?.whatsapp_instance_name && !waCredentials.instanceName) ? (
+                    <div className="flex flex-col items-center">
+                      <span className="material-icons text-6xl text-gray-300 dark:text-zinc-700 mb-4">phonelink_lock</span>
+                      <p className="text-gray-400">Instância não configurada.</p>
                     </div>
-                    <h3 className="font-bold text-lg text-gray-900 dark:text-zinc-50 mb-2">Ativar Integração WhatsApp</h3>
-                    <p className="text-sm text-gray-600 dark:text-zinc-400 mb-6 max-w-md mx-auto">
-                      Automatize o envio de lembretes e fidelize seus clientes. Clique abaixo para ativar.
-                    </p>
-
-                    <div className="mb-4 max-w-xs mx-auto text-left">
-                      <label className="text-xs font-bold text-gray-400 dark:text-zinc-500 mb-1 block">Nome da Instância (Opcional)</label>
-                      <input
-                        type="text"
-                        placeholder={currentStudio?.name ? `Ex: ${generateSlug(currentStudio.name).replace(/-/g, '_')}` : 'nome_instancia'}
-                        className="w-full px-4 py-2 rounded-lg border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-sm"
-                        onChange={(e) => setWaCredentials(prev => ({ ...prev, manualInstanceName: e.target.value }))}
-                      />
-                      <p className="text-[10px] text-gray-400 mt-1">Deixe em branco para gerar automaticamente.</p>
-                    </div>
-
-                    <button
-                      onClick={async () => {
-                        if (!currentStudio?.id || !currentStudio?.name) return;
-                        // ... logic updated below ...
-                        const targetName = waCredentials.manualInstanceName || currentStudio.name;
-
-                        if (!confirm(`Deseja conectar à instância "${targetName}"?`)) return;
-
-                        setLoadingQr(true);
-                        try {
-                          // 1. Provision (Updated to handle raw names if manual)
-                          const res = await whatsappService.provisionInstance(targetName, currentStudio.id);
-
-                          if (res.success && res.instanceName) {
-                            // 2. Refresh Token from DB
-                            const { data: freshStudio } = await supabase
-                              .from('studios')
-                              .select('*')
-                              .eq('id', currentStudio.id)
-                              .single();
-
-                            if (freshStudio?.whatsapp_token) {
-                              // UPDATE LOCAL STATE so UI updates immediately without reload
-                              setWaCredentials({
-                                instanceId: freshStudio.whatsapp_instance_id,
-                                token: freshStudio.whatsapp_token,
-                                instanceName: res.instanceName
-                              });
-
-                              // 3. Connect for QR
-                              const connectRes = await whatsappService.connectInstance(freshStudio.whatsapp_token);
-
-                              setDebugData({
-                                ...connectRes.debug,
-                                _client_check: {
-                                  token_prefix: freshStudio.whatsapp_token?.substring(0, 5),
-                                  has_global_key: !!import.meta.env.VITE_WHATSAPP_GLOBAL_KEY
-                                }
-                              }); // Show Debug Info Immediately
-
-                              if (connectRes.qrCode) {
-                                setQrCode(connectRes.qrCode);
-                                setConnectionStatus('DISCONNECTED');
-                              } else if (connectRes.status === 'CONNECTED') {
-                                setConnectionStatus('CONNECTED');
-                              }
-
-                              alert('Instância criada! Escaneie o QR Code ao lado.');
-                              // REMOVED: window.location.reload(); 
-                            }
-                          } else {
-                            const errorMsg = res.error?.response?.data?.message || res.error?.message || JSON.stringify(res.error);
-                            alert(`Erro ao criar instância: ${errorMsg}`);
-                          }
-                        } catch (err: any) {
-                          console.error('Erro detalhado:', err);
-                          alert(`Erro: ${err.message || 'Desconhecido'}`);
-                        } finally {
-                          setLoadingQr(false);
-                        }
-                      }}
-                      disabled={loadingQr}
-                      className="bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold py-3 px-8 rounded-xl shadow-lg shadow-[#92FFAD]/20 transition-all flex items-center justify-center gap-2 mx-auto disabled:opacity-50 hover:scale-105"
-                    >
-                      {loadingQr ? (
-                        <>
-                          <span className="material-icons animate-spin text-sm">sync</span>
-                          Configurando...
-                        </>
-                      ) : (
-                        <>
-                          <span className="material-icons">power_settings_new</span>
-                          Ativar Agora
-                        </>
-                      )}
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-6">
-                    <div>
-                      <label className="text-xs font-bold text-gray-500 dark:text-zinc-400 mb-2 block">Nome da Instância</label>
-                      <input
-                        className="w-full px-4 py-3 rounded-lg border border-gray-200 dark:border-zinc-800 bg-gray-50 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 focus:ring-2 focus:ring-primary outline-none cursor-not-allowed"
-                        value={currentStudio?.whatsapp_instance_name || waCredentials.instanceName || ''}
-                        disabled
-                        type="text"
-                      />
-                    </div>
-
-                    <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-zinc-800 rounded-xl border border-gray-200 dark:border-zinc-800">
-                      <div>
-                        <p className="font-semibold text-sm text-gray-900 dark:text-zinc-50">Status da Conexão</p>
-                        <p className="text-xs text-gray-500 dark:text-zinc-400">
-                          {connectionStatus === 'CONNECTED' ? 'Conectado e pronto para envio' : connectionStatus === 'CONNECTING' ? 'Tentando conectar...' : 'Aguardando leitura do QR Code'}
+                  ) : // Logic for Connected vs QR Code
+                    connectionStatus === 'CONNECTED' ? (
+                      <div className="animate-fade-in flex flex-col items-center">
+                        <div className="w-24 h-24 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6">
+                          <span className="material-icons text-5xl text-green-500">check_circle</span>
+                        </div>
+                        <h3 className="font-bold text-2xl mb-2 text-gray-900 dark:text-zinc-50">Tudo Certo!</h3>
+                        <p className="text-gray-500 dark:text-zinc-400 mb-8 max-w-sm">
+                          O WhatsApp está conectado e pronto para enviar mensagens automáticas.
                         </p>
-                      </div>
-                      <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-2 ${connectionStatus === 'CONNECTED' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                        <span className={`w-2 h-2 rounded-full ${connectionStatus === 'CONNECTED' ? 'bg-green-500' : 'bg-red-500'}`}></span>
-                        {connectionStatus === 'CONNECTED' ? 'ONLINE' : 'OFFLINE'}
-                      </div>
-                    </div>
-
-                    {connectionStatus === 'CONNECTED' && (
-                      <div className="flex flex-col gap-3">
-                        <button
-                          onClick={handleSendTest}
-                          disabled={loadingQr}
-                          className="w-full bg-[#333333] hover:bg-black text-white font-bold py-3 px-6 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50"
-                        >
-                          <span className="material-icons text-sm">send</span>
-                          {loadingQr ? 'Enviando...' : 'Enviar Mensagem de Teste'}
-                        </button>
 
                         <button
                           onClick={handleDisconnect}
-                          disabled={loadingQr}
-                          className="w-full bg-red-100 hover:bg-red-200 text-red-600 font-bold py-3 px-6 rounded-xl border border-red-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                          className="bg-red-50 hover:bg-red-100 text-red-600 font-bold py-3 px-8 rounded-xl border border-red-200 transition-all flex items-center gap-3"
                         >
-                          <span className="material-icons text-sm">logout</span>
+                          <span className="material-icons">logout</span>
                           Desconectar
                         </button>
                       </div>
+                    ) : (
+                      <div className="animate-fade-in flex flex-col items-center">
+                        <div className="w-20 h-20 bg-gray-200 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
+                          <span className="material-icons text-4xl text-gray-400">qr_code_2</span>
+                        </div>
+                        <h3 className="font-bold text-xl mb-2 text-gray-900 dark:text-zinc-50">WhatsApp Desconectado</h3>
+                        <p className="text-gray-500 dark:text-zinc-400 mb-8 max-w-xs leading-relaxed">
+                          Conecte seu WhatsApp para habilitar as automações do sistema.
+                        </p>
+
+                        <button
+                          onClick={() => setIsConnectModalOpen(true)}
+                          className="bg-black hover:bg-gray-800 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-black font-bold py-4 px-10 rounded-xl shadow-lg hover:scale-105 transition-all flex items-center gap-3 text-lg"
+                        >
+                          <span className="material-icons">link</span>
+                          Conectar WhatsApp
+                        </button>
+
+                        <WhatsAppConnectModal
+                          isOpen={isConnectModalOpen}
+                          onClose={() => setIsConnectModalOpen(false)}
+                          token={waCredentials.token || currentStudio?.whatsapp_token || ''}
+                          onSuccess={() => {
+                            fetchConnectionInfo(); // Using correct refresh function
+                            setIsConnectModalOpen(false);
+                          }}
+                        />
+                      </div>
                     )}
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-col items-center justify-center border-2 border-dashed border-[#333333] dark:border-zinc-800 rounded-2xl p-8 bg-gray-50 dark:bg-zinc-900/50 text-center relative overflow-hidden h-[400px]">
-                {(!currentStudio?.whatsapp_instance_name && !waCredentials.instanceName) ? (
-                  <div className="flex flex-col items-center">
-                    <span className="material-icons text-6xl text-gray-300 dark:text-zinc-700 mb-4">phonelink_lock</span>
-                    <p className="text-gray-400">Instância não configurada.</p>
-                  </div>
-                ) : // Logic for Connected vs QR Code
-                  connectionStatus === 'CONNECTED' ? (
-                    <div className="animate-fade-in flex flex-col items-center">
-                      <div className="w-24 h-24 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mb-6">
-                        <span className="material-icons text-5xl text-green-500">check_circle</span>
-                      </div>
-                      <h3 className="font-bold text-2xl mb-2 text-gray-900 dark:text-zinc-50">Tudo Certo!</h3>
-                      <p className="text-gray-500 dark:text-zinc-400 mb-8 max-w-sm">
-                        O WhatsApp está conectado e pronto para enviar mensagens automáticas.
-                      </p>
-
-                      <button
-                        onClick={handleDisconnect}
-                        className="bg-red-50 hover:bg-red-100 text-red-600 font-bold py-3 px-8 rounded-xl border border-red-200 transition-all flex items-center gap-3"
-                      >
-                        <span className="material-icons">logout</span>
-                        Desconectar
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="animate-fade-in flex flex-col items-center">
-                      <div className="w-20 h-20 bg-gray-200 dark:bg-zinc-800 rounded-full flex items-center justify-center mb-6">
-                        <span className="material-icons text-4xl text-gray-400">qr_code_2</span>
-                      </div>
-                      <h3 className="font-bold text-xl mb-2 text-gray-900 dark:text-zinc-50">WhatsApp Desconectado</h3>
-                      <p className="text-gray-500 dark:text-zinc-400 mb-8 max-w-xs leading-relaxed">
-                        Conecte seu WhatsApp para habilitar as automações do sistema.
-                      </p>
-
-                      <button
-                        onClick={() => setIsConnectModalOpen(true)}
-                        className="bg-black hover:bg-gray-800 dark:bg-white dark:hover:bg-gray-200 text-white dark:text-black font-bold py-4 px-10 rounded-xl shadow-lg hover:scale-105 transition-all flex items-center gap-3 text-lg"
-                      >
-                        <span className="material-icons">link</span>
-                        Conectar WhatsApp
-                      </button>
-
-                      <WhatsAppConnectModal
-                        isOpen={isConnectModalOpen}
-                        onClose={() => setIsConnectModalOpen(false)}
-                        token={waCredentials.token || currentStudio?.whatsapp_token || ''}
-                        onSuccess={() => {
-                          fetchConnectionInfo(); // Using correct refresh function
-                          setIsConnectModalOpen(false);
-                        }}
-                      />
-                    </div>
-                  )}
+                </div>
               </div>
             </div>
           </section>
@@ -1084,20 +1087,10 @@ const Settings: React.FC = () => {
           activeTab === 'fidelidade' && (
             <section className="animate-fade-in">
               {/* Header */}
-              <div className="flex justify-between items-center mb-8">
-                <h2 className="text-xl font-bold flex items-center text-gray-900 dark:text-zinc-50">
-                  <span className="material-icons mr-2 text-primary">loyalty</span>
-                  Programa de Fidelidade (Cashback)
-                </h2>
-                <button
-                  onClick={handleSaveLoyaltyConfig}
-                  disabled={loadingConfig}
-                  className="bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold py-2 px-6 rounded-lg shadow-md transition-all text-sm flex items-center disabled:opacity-50 hover:scale-105"
-                >
-                  <span className="material-icons text-sm mr-2">save</span>
-                  {loadingConfig ? 'Salvando...' : 'Salvar Configurações'}
-                </button>
-              </div>
+              <h2 className="text-xl font-bold flex items-center text-gray-900 dark:text-zinc-50 mb-8">
+                <span className="material-icons mr-2 text-primary">loyalty</span>
+                Cashback
+              </h2>
 
               {/* Toggles and Configs */}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-12">
@@ -1194,6 +1187,18 @@ const Settings: React.FC = () => {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* Save Button */}
+              <div className="flex justify-end pt-8">
+                <button
+                  onClick={handleSaveLoyaltyConfig}
+                  disabled={loadingConfig}
+                  className="bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold py-3 px-10 rounded-xl shadow-lg transition-all flex items-center transform hover:scale-105 hover:shadow-xl disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="material-icons mr-2">{loadingConfig ? 'sync' : 'save'}</span>
+                  {loadingConfig ? 'Salvando...' : 'Salvar Configurações'}
+                </button>
               </div>
             </section>
           )
