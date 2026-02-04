@@ -23,22 +23,15 @@ import ClientCare from './views/client/ClientCare';
 import ClientHistory from './views/client/ClientHistory';
 import ClientFinancial from './views/client/ClientFinancial';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { usePermissions } from './hooks/usePermissions';
 import AdminLayout from './layouts/AdminLayout';
 import AdminDashboard from './views/admin/AdminDashboard';
 import AdminStudios from './views/admin/AdminStudios';
 import NewStudioForm from './views/admin/NewStudioForm';
 
-// Temporary adapter to match local User type with Supabase User
-const ADAPTER_USER: User = {
-  id: 'user_1',
-  name: 'Bruno Foa',
-  email: 'bruno@safetatt.com',
-  role: 'Master',
-  avatar: 'https://picsum.photos/seed/bruno/100/100'
-};
-
 const AppContent: React.FC = () => {
-  const { user: authUser, loading, sessionRole, currentStudio, selectSession } = useAuth();
+  const { user: authUser, profile, loading, sessionRole, currentStudio, selectSession } = useAuth();
+  const { permissions } = usePermissions();
   const [currentScreen, setCurrentScreen] = useState<Screen>(Screen.STUDIO_SELECTION);
   const [selectedClientId, setSelectedClientId] = useState<string | null>(null);
   const [selectedClientTab, setSelectedClientTab] = useState<string>('dados');
@@ -82,12 +75,13 @@ const AppContent: React.FC = () => {
     return <Login onLogin={() => { }} />;
   }
 
-  // Adapter for "User" prop required by existing views
+  // Build User object from real profile data
   const appUser: User = {
-    ...ADAPTER_USER,
     id: authUser.id,
-    email: authUser.email || ADAPTER_USER.email,
-    role: sessionRole || 'Master' // Fallback for display
+    name: profile?.full_name || authUser.email?.split('@')[0] || 'Usuário',
+    email: authUser.email || '',
+    role: sessionRole || 'Master', // Fallback for display
+    avatar: profile?.avatar_url || `https://ui-avatars.com/api/?name=${encodeURIComponent(profile?.full_name || 'U')}&background=333333&color=ffffff`
   };
 
   // Check if we are in an Admin Screen
@@ -162,16 +156,36 @@ const AppContent: React.FC = () => {
       case Screen.APPOINTMENTS:
         return <Appointments onNewAppointment={() => navigate(Screen.NEW_APPOINTMENT)} />;
       case Screen.SETTINGS:
+        // Block if user doesn't have permission
+        if (!permissions.canAccessSettings) {
+          return <Dashboard user={appUser} />;
+        }
         return <Settings />;
       case Screen.NEW_APPOINTMENT:
+        // Block if user can't create sessions
+        if (!permissions.canCreateSession) {
+          return <Appointments onNewAppointment={() => { }} />;
+        }
         return <NewAppointment onFinish={() => navigate(Screen.APPOINTMENTS)} onCancel={() => navigate(Screen.APPOINTMENTS)} />;
       case Screen.CLIENT_PROFILE:
+        // Block if user can't view client profiles
+        if (!permissions.canViewClientProfile) {
+          return <Clients onEditClient={() => { }} />;
+        }
         return <ClientProfile clientId={selectedClientId!} initialTab={selectedClientTab} onBack={() => navigate(Screen.CLIENTS)} />;
       case Screen.AGENDA:
         return <Agenda onNewAppointment={() => navigate(Screen.NEW_APPOINTMENT)} />;
       case Screen.MARKETING:
+        // Block if user doesn't have permission
+        if (!permissions.canAccessMarketing) {
+          return <Dashboard user={appUser} />;
+        }
         return <Marketing />;
       case Screen.LOYALTY:
+        // Block if user doesn't have permission
+        if (!permissions.canAccessLoyalty) {
+          return <Dashboard user={appUser} />;
+        }
         return <Loyalty onViewClientProfile={(id) => handleEditClient(id, 'fidelidade')} />;
       default:
         return <Dashboard user={appUser} />;

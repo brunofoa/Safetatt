@@ -10,6 +10,7 @@ import {
 } from '@phosphor-icons/react';
 import { dashboardService, DashboardStats, AppointmentSession } from '../services/dashboardService';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface DashboardProps {
   user: User;
@@ -17,6 +18,7 @@ interface DashboardProps {
 
 const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const { currentStudio } = useAuth();
+  const { permissions, currentUserId } = usePermissions();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<DashboardStats>({
     totalClients: 0,
@@ -62,6 +64,11 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
   const getFirstName = (name: string) => name ? name.split(' ')[0] : 'Usuário';
 
+  // Filter appointments to only show user's own if they don't have permission to view all
+  const filteredAppointments = permissions.canViewAllAppointments
+    ? appointments
+    : appointments.filter(a => a.artistId === currentUserId);
+
   return (
     <div className="px-4 md:px-8 max-w-7xl mx-auto">
       <header className="mb-10 flex flex-col md:flex-row md:items-end justify-between gap-6">
@@ -71,53 +78,57 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         </div>
       </header>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-        <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-6 hover:shadow-lg transition-all">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-2xl text-blue-600">
-              <UsersThree size={32} weight="duotone" />
+      {/* Stats Cards - Only show for users with financial permissions */}
+      {permissions.canViewFinancials && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+          <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-6 hover:shadow-lg transition-all">
+            <div className="flex justify-between items-start mb-4">
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-2xl text-blue-600">
+                <UsersThree size={32} weight="duotone" />
+              </div>
             </div>
+            <h3 className="text-gray-500 dark:text-zinc-400 text-xs font-bold tracking-wider mb-1">Clientes totais</h3>
+            <p className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50">
+              {loading ? '...' : stats.totalClients}
+            </p>
           </div>
-          <h3 className="text-gray-500 dark:text-zinc-400 text-xs font-bold tracking-wider mb-1">Clientes totais</h3>
-          <p className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50">
-            {loading ? '...' : stats.totalClients}
-          </p>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-6 hover:shadow-lg transition-all">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-2xl text-purple-600">
-              <CalendarCheck size={32} weight="duotone" />
+          <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-6 hover:shadow-lg transition-all">
+            <div className="flex justify-between items-start mb-4">
+              <div className="p-3 bg-purple-50 dark:bg-purple-900/20 rounded-2xl text-purple-600">
+                <CalendarCheck size={32} weight="duotone" />
+              </div>
             </div>
+            <h3 className="text-gray-500 dark:text-zinc-400 text-xs font-bold tracking-wider mb-1">Atendimentos totais</h3>
+            <p className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50">
+              {loading ? '...' : stats.totalAppointments}
+            </p>
           </div>
-          <h3 className="text-gray-500 dark:text-zinc-400 text-xs font-bold tracking-wider mb-1">Atendimentos totais</h3>
-          <p className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50">
-            {loading ? '...' : stats.totalAppointments}
-          </p>
-        </div>
-        <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-6 hover:shadow-lg transition-all">
-          <div className="flex justify-between items-start mb-4">
-            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-2xl text-green-600">
-              <CurrencyDollar size={32} weight="duotone" />
+          <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-6 hover:shadow-lg transition-all">
+            <div className="flex justify-between items-start mb-4">
+              <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-2xl text-green-600">
+                <CurrencyDollar size={32} weight="duotone" />
+              </div>
             </div>
+            <h3 className="text-gray-500 dark:text-zinc-400 text-xs font-bold tracking-wider mb-1">Faturamento total</h3>
+            <p className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50">
+              {loading ? '...' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalRevenue)}
+            </p>
           </div>
-          <h3 className="text-gray-500 dark:text-zinc-400 text-xs font-bold tracking-wider mb-1">Faturamento total</h3>
-          <p className="text-2xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50">
-            {loading ? '...' : new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(stats.totalRevenue)}
-          </p>
         </div>
-      </div>
+      )}
 
       <div className="flex flex-col gap-8">
+        {/* Upcoming Appointments - Always visible, but filtered */}
         <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-6">
           <div className="flex items-center justify-between mb-6">
             <h2 className="font-bold text-gray-900 dark:text-zinc-50">Próximos Agendamentos</h2>
             <button className="text-blue-600 text-[10px] font-bold tracking-widest hover:underline">Ver todas</button>
           </div>
           <div className="space-y-4 max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-            {appointments.length === 0 ? (
+            {filteredAppointments.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-4">Nenhum agendamento próximo.</p>
             ) : (
-              appointments.map((appointment, idx) => (
+              filteredAppointments.map((appointment, idx) => (
                 <div key={idx} className="flex items-center gap-4 p-3 rounded-2xl hover:bg-gray-50 dark:hover:bg-zinc-800/50 transition-colors cursor-pointer group">
                   <div className="text-center min-w-[50px]">
                     <p className="text-[10px] font-bold text-gray-400 dark:text-zinc-500">{appointment.day}</p>
@@ -136,49 +147,52 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           </div>
         </div>
 
-        <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-8">
-          <div className="flex items-center justify-between mb-8">
-            <div>
-              <h2 className="text-xl font-bold tracking-tight text-gray-900 dark:text-zinc-50">Faturamento mês a mês</h2>
-              <p className="text-xs text-gray-500 dark:text-zinc-400">Visão geral do desempenho financeiro anual</p>
+        {/* Revenue Chart - Only show for users with financial permissions */}
+        {permissions.canViewFinancials && (
+          <div className="bg-white dark:bg-zinc-900 border border-[#333333] dark:border-zinc-800 shadow-sm rounded-3xl p-3 md:p-8">
+            <div className="flex items-center justify-between mb-8">
+              <div>
+                <h2 className="text-xl font-bold tracking-tight text-gray-900 dark:text-zinc-50">Faturamento mês a mês</h2>
+                <p className="text-xs text-gray-500 dark:text-zinc-400">Visão geral do desempenho financeiro anual</p>
+              </div>
+              <select className="bg-gray-100 dark:bg-zinc-800 border-none rounded-2xl text-xs font-bold focus:ring-primary text-gray-900 dark:text-zinc-50">
+                <option>Ano {new Date().getFullYear()}</option>
+              </select>
             </div>
-            <select className="bg-gray-100 dark:bg-zinc-800 border-none rounded-2xl text-xs font-bold focus:ring-primary text-gray-900 dark:text-zinc-50">
-              <option>Ano {new Date().getFullYear()}</option>
-            </select>
+            <div className="h-[400px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={stats.revenueByMonth}>
+                  <defs>
+                    <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#92FFAD" stopOpacity={0.8} />
+                      <stop offset="95%" stopColor="#5CDFF0" stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#33333322" />
+                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                  <YAxis
+                    axisLine={false}
+                    tickLine={false}
+                    tick={{ fontSize: 10, fill: '#94a3b8' }}
+                    width={45}
+                    tickFormatter={(value) => {
+                      if (value >= 1000000) return `R$ ${(value / 1000000).toFixed(0)}M`;
+                      if (value >= 1000) return `R$ ${(value / 1000).toFixed(0)}k`;
+                      return `R$ ${value}`;
+                    }}
+                  />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: '#18181b', borderRadius: '12px', border: '1px solid #27272a', color: '#fafafa' }}
+                    itemStyle={{ color: '#92FFAD' }}
+                    labelStyle={{ color: '#a1a1aa' }}
+                    formatter={(value: number) => [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value), 'Faturamento']}
+                  />
+                  <Area type="monotone" dataKey="value" stroke="#5CDFF0" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
           </div>
-          <div className="h-[400px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={stats.revenueByMonth}>
-                <defs>
-                  <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#92FFAD" stopOpacity={0.8} />
-                    <stop offset="95%" stopColor="#5CDFF0" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#33333322" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                <YAxis
-                  axisLine={false}
-                  tickLine={false}
-                  tick={{ fontSize: 10, fill: '#94a3b8' }}
-                  width={45}
-                  tickFormatter={(value) => {
-                    if (value >= 1000000) return `R$ ${(value / 1000000).toFixed(0)}M`;
-                    if (value >= 1000) return `R$ ${(value / 1000).toFixed(0)}k`;
-                    return `R$ ${value}`;
-                  }}
-                />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#18181b', borderRadius: '12px', border: '1px solid #27272a', color: '#fafafa' }}
-                  itemStyle={{ color: '#92FFAD' }}
-                  labelStyle={{ color: '#a1a1aa' }}
-                  formatter={(value: number) => [new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value), 'Faturamento']}
-                />
-                <Area type="monotone" dataKey="value" stroke="#5CDFF0" strokeWidth={3} fillOpacity={1} fill="url(#colorValue)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

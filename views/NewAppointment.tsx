@@ -71,9 +71,9 @@ const NewAppointment: React.FC<NewAppointmentProps> = ({ onFinish, onCancel }) =
         setAnamnesisItems(['Diabetes', 'Hipertensão', 'Alergias', 'Hepatite', 'HIV', 'Problemas Dermatológicos']);
       }
 
-      // Load Artists
-      const members = await teamService.getTeamMembers(currentStudio.id);
-      // Filter only artists/masters if possible, for now all members
+      // Load Artists/Professionals (only MASTER, ARTIST, PIERCER - exclude CLIENT)
+      const members = await teamService.getProfessionals(currentStudio.id);
+      // Set all professionals as available artists
       setArtists(members);
 
       // Auto-select current user if in list, otherwise first

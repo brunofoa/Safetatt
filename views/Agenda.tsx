@@ -1,575 +1,481 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import ErrorBoundary from '../components/ErrorBoundary';
-import { Calendar, dateFnsLocalizer, View } from 'react-big-calendar';
-import { format, parse, startOfWeek, getDay, startOfMonth, endOfMonth, addMonths, subMonths, addWeeks, subWeeks, addDays, subDays } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
+import { useAuth } from '../contexts/AuthContext';
+import { appointmentService } from '../services/appointmentService';
+import { teamService, TeamMember } from '../services/teamService';
 import NewAppointmentModal from '../components/NewAppointmentModal';
 import { Appointment } from '../types';
-import { appointmentService } from '../services/appointmentService';
-import { useAuth } from '../contexts/AuthContext';
-import '../styles/agenda-calendar.css';
+import { usePermissions } from '../hooks/usePermissions';
 
-// Configure date-fns localizer for Portuguese
-const locales = {
-    'pt-BR': ptBR,
-};
-
-const localizer = dateFnsLocalizer({
-    format,
-    parse,
-    startOfWeek,
-    getDay,
-    locales,
-});
-
-// Custom messages in Portuguese
-const messages = {
-    allDay: 'Dia inteiro',
-    previous: 'Anterior',
-    next: 'Próximo',
-    today: 'Hoje',
-    month: 'Mês',
-    week: 'Semana',
-    day: 'Dia',
-    agenda: 'Lista',
-    date: 'Data',
-    time: 'Hora',
-    event: 'Evento',
-    noEventsInRange: 'Não há agendamentos neste período.',
-    showMore: (total: number) => `+ ${total} mais`,
-};
-
-interface CalendarEvent {
-    title: string;
-    start: Date;
-    end: Date;
-    resource: Appointment;
-    status: string;
-}
-
-interface AgendaProps {
-    onNewAppointment?: () => void;
-}
-
-const Agenda: React.FC<AgendaProps> = () => {
+const Agenda: React.FC = () => {
     const { currentStudio } = useAuth();
-    const [view, setView] = useState<View>('week'); // Default to week view
-    const [date, setDate] = useState(new Date());
-    const [events, setEvents] = useState<CalendarEvent[]>([]);
+    const { permissions, currentUserId } = usePermissions();
+    const [selectedDate, setSelectedDate] = useState(new Date());
+    const [viewMode, setViewMode] = useState<'day' | 'week'>('day');
+    const [selectedArtist, setSelectedArtist] = useState('all');
+    const [currentMonth, setCurrentMonth] = useState(new Date());
+    const [appointments, setAppointments] = useState<Appointment[]>([]);
+    const [artists, setArtists] = useState<TeamMember[]>([]);
+    const [isLoading, setIsLoading] = useState(false);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingAppointment, setEditingAppointment] = useState<Appointment | null>(null);
-    const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-    const [errorMsg, setErrorMsg] = useState<string | null>(null);
+    const [showCalendar, setShowCalendar] = useState(true);
 
-    // Load appointments for the current view's date range
-    const loadAppointments = useCallback(async () => {
-        if (!currentStudio?.id) return;
+    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+    const dayNames = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
-        // Calculate date range based on current view
-        let startDate: Date;
-        let endDate: Date;
+    const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+    const firstDayOfMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1).getDay();
 
-        if (view === 'month') {
-            startDate = startOfMonth(date);
-            endDate = endOfMonth(date);
-        } else if (view === 'week') {
-            startDate = startOfWeek(date, { locale: ptBR });
-            endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + 6);
-        } else if (view === 'day') {
-            startDate = new Date(date);
-            startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(date);
-            endDate.setHours(23, 59, 59, 999);
-        } else {
-            // Agenda view - show next 30 days
-            startDate = new Date();
-            endDate = new Date();
-            endDate.setDate(endDate.getDate() + 30);
-        }
-
-        try {
-            setErrorMsg(null);
-            console.log('Fetching appointments for range:', {
-                studioId: currentStudio.id,
-                start: startDate.toISOString(),
-                end: endDate.toISOString(),
-                view
-            });
-
-            const response = await appointmentService.getAppointments(
-                currentStudio.id,
-                startDate.toISOString(),
-                endDate.toISOString()
-            );
-
-            console.log('API Response:', response);
-
-            // Handle response format { success, data, error }
-            if (!response.success || !response.data) {
-                console.error('Error loading appointments:', response.error);
-                setErrorMsg(response.error?.message || 'Erro ao carregar agendamentos');
-                setEvents([]);
+    // Load artists - using getProfessionals (only MASTER, ARTIST, PIERCER)
+    useEffect(() => {
+        const loadArtists = async () => {
+            if (!currentStudio?.id) {
+                console.warn('⚠️ No studio ID available for loading artists');
                 return;
             }
 
-            const appointments = response.data;
-            console.log('Raw Appointments:', appointments);
+            console.log('🔒 Loading PROFESSIONALS for studio:', currentStudio.id);
 
-            // Map appointments to calendar events
-            const calendarEvents: CalendarEvent[] = appointments.map((appt: any) => {
-                // Parse scheduled_date and scheduled_time
-                const datePart = appt.scheduled_date; // YYYY-MM-DD
-                const timePart = appt.scheduled_time || '00:00:00'; // HH:MM:SS
-                const start = new Date(`${datePart}T${timePart}`);
-                const end = new Date(start.getTime() + (appt.duration_minutes || 60) * 60000);
+            try {
+                // Use getProfessionals to get only MASTER, ARTIST, PIERCER (exclude CLIENT)
+                const members = await teamService.getProfessionals(currentStudio.id);
+                console.log('✅ Loaded professionals:', members.length);
+                setArtists(members);
+            } catch (error) {
+                console.error('❌ Error loading artists:', error);
+            }
+        };
 
-                return {
-                    title: `${appt.clients?.name || appt.clients?.full_name || 'Cliente'} - ${appt.appointment_type || 'Atendimento'}`,
-                    start,
-                    end,
-                    resource: {
-                        id: appt.id,
-                        clientName: appt.clients?.name || appt.clients?.full_name || 'Cliente',
-                        artist: appt.profiles?.full_name || 'Profissional',
-                        artistColor: appt.profiles?.display_color,
-                        status: appt.status,
-                        title: appt.appointment_type || 'Atendimento',
-                        description: appt.notes || '',
-                        date: start.toISOString(),
-                        start_time: start.toISOString(),
-                        end_time: end.toISOString(),
-                        time: `${timePart.slice(0, 5)} - ${end.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`,
-                        clientAvatar: '',
-                        photos: [],
-                        tattooImage: null,
-                    } as Appointment,
-                    status: appt.status,
-                };
-            }).filter((event: CalendarEvent) => {
-                const isValid = event.start instanceof Date && !isNaN(event.start.getTime()) &&
-                    event.end instanceof Date && !isNaN(event.end.getTime());
+        loadArtists();
+    }, [currentStudio?.id]);
 
-                if (!isValid) {
-                    console.warn('⚠️ Invalid Date found in appointment:', event.resource);
-                }
-                return isValid;
-            });
-
-            console.log('Mapped Events:', calendarEvents);
-
-            setEvents(calendarEvents);
-        } catch (error: any) {
-            console.error('Error loading appointments:', error);
-            setErrorMsg(error.message || 'Erro inesperado');
+    // Load appointments
+    const loadAppointments = useCallback(async () => {
+        if (!currentStudio?.id) {
+            console.warn('⚠️ No studio ID available for loading appointments');
+            return;
         }
-    }, [currentStudio?.id, date, view]);
+
+        setIsLoading(true);
+        console.log('🔒 Loading appointments for studio:', currentStudio.id, 'mode:', viewMode);
+
+        try {
+            if (viewMode === 'day') {
+                const data = await appointmentService.getByDate(selectedDate, currentStudio.id);
+                console.log('✅ Day appointments loaded:', data.length);
+                setAppointments(data);
+            } else {
+                const weekDates = getWeekDates(selectedDate);
+
+                // Fetch appointments for each day of the week
+                const allAppointments: Appointment[] = [];
+                for (const date of weekDates) {
+                    const data = await appointmentService.getByDate(date, currentStudio.id);
+                    allAppointments.push(...data);
+                }
+                console.log('✅ Week appointments loaded:', allAppointments.length);
+                setAppointments(allAppointments);
+            }
+        } catch (error) {
+            console.error('❌ Error loading appointments:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [currentStudio?.id, selectedDate, viewMode]);
 
     useEffect(() => {
         loadAppointments();
     }, [loadAppointments]);
 
-    // Event style getter - color code by artist or status
-    const eventStyleGetter = (event: CalendarEvent) => {
-        const statusColors: Record<string, { backgroundColor: string; borderColor: string }> = {
-            'confirmed': { backgroundColor: '#10b981', borderColor: '#059669' }, // Green
-            'Confirmado': { backgroundColor: '#10b981', borderColor: '#059669' },
-            'pending': { backgroundColor: '#f59e0b', borderColor: '#d97706' }, // Yellow
-            'Pendente': { backgroundColor: '#f59e0b', borderColor: '#d97706' },
-            'cancelled': { backgroundColor: '#ef4444', borderColor: '#dc2626' }, // Red
-            'Cancelado': { backgroundColor: '#ef4444', borderColor: '#dc2626' },
-            'completed': { backgroundColor: '#6366f1', borderColor: '#4f46e5' }, // Blue
-            'Finalizado': { backgroundColor: '#6366f1', borderColor: '#4f46e5' },
-            'Concluído': { backgroundColor: '#6366f1', borderColor: '#4f46e5' },
-            'no_show': { backgroundColor: '#6b7280', borderColor: '#4b5563' }, // Gray
-            'No Show': { backgroundColor: '#6b7280', borderColor: '#4b5563' },
-            'Ausente': { backgroundColor: '#6b7280', borderColor: '#4b5563' },
-        };
-
-        const statusColor = statusColors[event.status] || statusColors['pending'];
-        const artistColor = event.resource?.artistColor;
-
-        return {
-            style: {
-                backgroundColor: artistColor || statusColor.backgroundColor,
-                borderColor: artistColor || statusColor.borderColor,
-                color: artistColor ? '#000000' : 'white',
-                borderRadius: '8px',
-                border: '1px solid',
-                fontSize: '12px',
-                fontWeight: '700',
-            },
-        };
+    const formatDate = (date: Date) => {
+        return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     };
 
-    // Handle event click - open edit modal
-    const handleSelectEvent = (event: CalendarEvent) => {
-        setEditingAppointment(event.resource);
-        setIsModalOpen(true);
+    const getWeekDates = (date: Date) => {
+        const day = date.getDay();
+        const diff = date.getDate() - day;
+        const weekDates: Date[] = [];
+        for (let i = 0; i < 7; i++) {
+            weekDates.push(new Date(date.getFullYear(), date.getMonth(), diff + i));
+        }
+        return weekDates;
     };
 
-    // Handle slot selection - open new appointment modal
-    const handleSelectSlot = (slotInfo: any) => {
-        setSelectedDate(slotInfo.start);
+    const hasAppointment = (date: Date) => {
+        const dateStr = formatDate(date);
+        return appointments.some(app => {
+            const appDate = new Date(app.start_time || app.date);
+            return formatDate(appDate) === dateStr;
+        });
+    };
+
+    const getFilteredAppointments = () => {
+        let filtered = [...appointments];
+
+        if (viewMode === 'day') {
+            const selectedDateStr = formatDate(selectedDate);
+            filtered = filtered.filter(app => {
+                const appDate = new Date(app.start_time || app.date);
+                return formatDate(appDate) === selectedDateStr;
+            });
+        }
+
+        // If user doesn't have permission to view all, only show their own appointments
+        if (!permissions.canViewAllAgenda && currentUserId) {
+            filtered = filtered.filter(app => app.artist_id === currentUserId);
+        }
+
+        // Filter by selected artist (using profile_id) - only if user has permission
+        if (permissions.canViewAllAgenda && selectedArtist !== 'all') {
+            filtered = filtered.filter(app => {
+                // Check artist_id (profile_id) or match by artist name
+                const artistMatch =
+                    app.artist_id === selectedArtist ||
+                    app.artist?.toLowerCase() === artists.find(a => a.profile_id === selectedArtist)?.full_name?.toLowerCase();
+                return artistMatch;
+            });
+        }
+
+        return filtered.sort((a, b) => {
+            const dateA = new Date(a.start_time || a.date);
+            const dateB = new Date(b.start_time || b.date);
+            return dateA.getTime() - dateB.getTime();
+        });
+    };
+
+    const isToday = (date: Date) => {
+        const today = new Date();
+        return date.toDateString() === today.toDateString();
+    };
+
+    const isSelected = (date: Date) => {
+        return date.toDateString() === selectedDate.toDateString();
+    };
+
+    const prevMonth = () => {
+        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1));
+    };
+
+    const nextMonth = () => {
+        setCurrentMonth(new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1));
+    };
+
+    const handleNewAppointment = () => {
         setEditingAppointment(null);
         setIsModalOpen(true);
     };
 
-    // Handle view change
-    const handleViewChange = (newView: View) => {
-        setView(newView);
+    const handleEditAppointment = (appointment: Appointment) => {
+        setEditingAppointment(appointment);
+        setIsModalOpen(true);
     };
 
-    // Handle navigation
-    const handleNavigate = (newDate: Date) => {
-        setDate(newDate);
-    };
-
-    // Custom Toolbar Component
-    const CustomToolbar = (toolbarProps: any) => {
-        const goToBack = () => {
-            const currentDate = toolbarProps.date;
-            let newDate;
-
-            switch (view) {
-                case 'month':
-                    newDate = subMonths(currentDate, 1);
-                    break;
-                case 'week':
-                    newDate = subWeeks(currentDate, 1);
-                    break;
-                case 'day':
-                    newDate = subDays(currentDate, 1);
-                    break;
-                case 'agenda':
-                    newDate = subDays(currentDate, 1);
-                    break;
-                default:
-                    newDate = subDays(currentDate, 1);
-            }
-            toolbarProps.onNavigate(newDate);
-        };
-
-        const goToNext = () => {
-            const currentDate = toolbarProps.date;
-            let newDate;
-
-            switch (view) {
-                case 'month':
-                    newDate = addMonths(currentDate, 1);
-                    break;
-                case 'week':
-                    newDate = addWeeks(currentDate, 1);
-                    break;
-                case 'day':
-                    newDate = addDays(currentDate, 1);
-                    break;
-                case 'agenda':
-                    newDate = addDays(currentDate, 1);
-                    break;
-                default:
-                    newDate = addDays(currentDate, 1);
-            }
-            toolbarProps.onNavigate(newDate);
-        };
-
-        const goToCurrent = () => {
-            toolbarProps.onNavigate(new Date());
-        };
-
-        const label = () => {
-            const date = toolbarProps.date;
-            return (
-                <span className="capitalize">
-                    {format(date, view === 'day' ? "EEEE, d 'de' MMMM" : "MMMM yyyy", { locale: ptBR })}
-                </span>
-            );
-        };
-
-        return (
-            <div className="rbc-toolbar">
-                <div className="rbc-btn-group">
-                    <button type="button" onClick={goToBack}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                        </svg>
-                    </button>
-                    <button type="button" onClick={goToCurrent}>Hoje</button>
-                    <button type="button" onClick={goToNext}>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
-                    </button>
-                </div>
-
-                <div className="rbc-toolbar-label">{label()}</div>
-
-                <div className="rbc-btn-group hidden md:flex">
-                    <button
-                        type="button"
-                        className={view === 'month' ? 'rbc-active' : ''}
-                        onClick={() => toolbarProps.onView('month')}
-                    >
-                        Mês
-                    </button>
-                    <button
-                        type="button"
-                        className={view === 'week' ? 'rbc-active' : ''}
-                        onClick={() => toolbarProps.onView('week')}
-                    >
-                        Semana
-                    </button>
-                    <button
-                        type="button"
-                        className={view === 'day' ? 'rbc-active' : ''}
-                        onClick={() => toolbarProps.onView('day')}
-                    >
-                        Dia
-                    </button>
-                    <button
-                        type="button"
-                        className={view === 'agenda' ? 'rbc-active' : ''}
-                        onClick={() => toolbarProps.onView('agenda')}
-                    >
-                        Lista
-                    </button>
-                </div>
-            </div>
-        );
-    };
-
-    // Update view based on screen size on mount and resize
-    useEffect(() => {
-        const handleResize = () => {
-            if (window.innerWidth < 768) {
-                setView(prev => (prev === 'week' || prev === 'month' ? 'day' : prev));
-            } else {
-                setView(prev => (prev === 'day' || prev === 'agenda' ? 'week' : prev));
-            }
-        };
-
-        // Set initial view
-        handleResize();
-
-        window.addEventListener('resize', handleResize);
-        return () => window.removeEventListener('resize', handleResize);
-    }, []);
-
-    // Custom Event Component
-    const CustomEvent = ({ event }: any) => {
-        return (
-            <div className="h-full w-full flex flex-col justify-start overflow-hidden leading-tight p-0.5">
-                <div className="flex items-center gap-1 mb-0.5">
-                    <span className="text-[10px] font-bold opacity-75 truncate" style={{ color: 'inherit' }}>
-                        {event.resource.time.split(' - ')[0]}
-                    </span>
-                </div>
-                <div className="font-bold text-xs truncate" style={{ color: 'inherit' }}>
-                    {event.resource.clientName}
-                </div>
-                {event.resource.artist && (
-                    <div className="text-[9px] opacity-75 truncate" style={{ color: 'inherit' }}>
-                        {event.resource.artist.split(' ')[0]}
-                    </div>
-                )}
-            </div>
-        );
-    };
-
-    // Custom Agenda View matching the design
-    const CustomAgendaView = () => {
-        // Group events by date
-        const groupedEvents = events.reduce((acc: any, event) => {
-            const dateKey = format(event.start, 'yyyy-MM-dd');
-            if (!acc[dateKey]) acc[dateKey] = [];
-            acc[dateKey].push(event);
-            return acc;
-        }, {});
-
-        // Sort dates
-        const sortedDates = Object.keys(groupedEvents).sort();
-
-        // Status mapping for badges
-        const getStatusBadge = (status: string) => {
-            const statusMap: Record<string, { label: string, color: string, bg: string }> = {
-                'confirmed': { label: 'CONFIRMADO', color: '#10b981', bg: '#d1fae5' },
-                'Confirmado': { label: 'CONFIRMADO', color: '#10b981', bg: '#d1fae5' },
-                'pending': { label: 'PENDENTE', color: '#f59e0b', bg: '#fef3c7' },
-                'Pendente': { label: 'PENDENTE', color: '#f59e0b', bg: '#fef3c7' },
-                'cancelled': { label: 'CANCELADO', color: '#ef4444', bg: '#fee2e2' },
-                'Cancelado': { label: 'CANCELADO', color: '#ef4444', bg: '#fee2e2' },
-                'completed': { label: 'FINALIZADO', color: '#f97316', bg: '#ffedd5' },
-                'Finalizado': { label: 'FINALIZADO', color: '#f97316', bg: '#ffedd5' },
-                'Ausente': { label: 'AUSENTE', color: '#6b7280', bg: '#f3f4f6' }
-            };
-            return statusMap[status] || { label: status.toUpperCase(), color: '#6b7280', bg: '#f3f4f6' };
-        };
-
-        return (
-            <div className="h-full overflow-y-auto custom-scrollbar p-6 bg-white rounded-2xl">
-                {sortedDates.length === 0 ? (
-                    <div className="text-center text-gray-500 py-10">
-                        Não há agendamentos para este período.
-                    </div>
-                ) : (
-                    sortedDates.map(dateKey => {
-                        const dateEvents = groupedEvents[dateKey].sort((a: any, b: any) => a.start.getTime() - b.start.getTime());
-                        const dateObj = new Date(dateKey + 'T00:00:00');
-
-                        return (
-                            <div key={dateKey} className="mb-8">
-                                <div className="mb-4">
-                                    <h3 className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1">SESSÕES DO DIA</h3>
-                                    <h2 className="text-2xl font-bold text-gray-900 capitalize">
-                                        {format(dateObj, "d 'de' MMMM", { locale: ptBR })}
-                                    </h2>
-                                </div>
-
-                                <div className="space-y-0 relative">
-                                    {/* Vertical Line */}
-                                    <div className="absolute left-[7px] top-2 bottom-2 w-[2px] bg-gray-100"></div>
-
-                                    {dateEvents.map((event: CalendarEvent, idx: number) => {
-                                        const badge = getStatusBadge(event.status);
-                                        const artistName = event.resource.artist || 'Profissional';
-
-                                        return (
-                                            <div key={idx} className="relative flex items-start gap-6 py-4 hover:bg-gray-50 rounded-xl transition-colors px-4 -mx-4 group">
-                                                {/* Timeline Dot */}
-                                                <div
-                                                    className="w-4 h-4 rounded-full border-4 border-white shadow-sm z-10 flex-shrink-0 mt-1"
-                                                    style={{ backgroundColor: event.resource.artistColor || '#3b82f6' }}
-                                                ></div>
-
-                                                <div className="flex-1 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                                    {/* Info */}
-                                                    <div>
-                                                        <div className="text-sm font-bold text-gray-400 mb-1">
-                                                            {format(event.start, 'HH:mm')} - {format(event.end, 'HH:mm')}
-                                                        </div>
-                                                        <h3 className="text-lg font-bold text-gray-900">
-                                                            {event.resource.clientName}
-                                                        </h3>
-                                                        <p className="text-sm text-gray-400 italic font-medium">
-                                                            {artistName}
-                                                        </p>
-                                                    </div>
-
-                                                    {/* Status & Actions */}
-                                                    <div className="flex items-center gap-4">
-                                                        <span
-                                                            className="px-3 py-1 rounded-full text-[10px] font-bold tracking-wider uppercase"
-                                                            style={{ backgroundColor: badge.bg, color: badge.color }}
-                                                        >
-                                                            {badge.label}
-                                                        </span>
-                                                        <button
-                                                            onClick={() => handleSelectEvent(event)}
-                                                            className="w-10 h-10 rounded-full bg-green-50 text-green-500 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover:bg-green-100"
-                                                        >
-                                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                                                            </svg>
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        );
-                    })
-                )}
-            </div>
-        );
-    };
+    const filteredAppointments = getFilteredAppointments();
+    const weekDates = getWeekDates(selectedDate);
 
     return (
-        <ErrorBoundary>
-            <div className="h-full flex flex-col gap-6">
-                {/* Modal */}
-                <NewAppointmentModal
-                    isOpen={isModalOpen}
-                    onClose={() => setIsModalOpen(false)}
-                    selectedDate={selectedDate}
-                    appointment={editingAppointment}
-                    onSuccess={loadAppointments}
-                />
+        <div className="px-4 md:px-6 max-w-7xl mx-auto min-h-screen pb-20">
+            {/* Modal */}
+            <NewAppointmentModal
+                isOpen={isModalOpen}
+                onClose={() => setIsModalOpen(false)}
+                selectedDate={selectedDate}
+                appointment={editingAppointment}
+                onSuccess={loadAppointments}
+            />
 
-                {/* Header */}
-                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                    <div>
-                        <h1 className="text-3xl font-bold text-black">Agenda</h1>
-                        <p className="text-zinc-400 mt-1">
-                            Visualize e gerencie seus agendamentos ({events.length} carregados)
-                        </p>
-                        {errorMsg && (
-                            <p className="text-red-500 font-bold text-sm mt-1 bg-red-100 p-2 rounded">
-                                {errorMsg}
-                            </p>
+            {/* Header */}
+            <div className="mb-4 md:mb-6 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                    <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-gray-900 dark:text-zinc-50 mb-1">
+                        Agenda
+                    </h1>
+                    <p className="text-gray-500 dark:text-zinc-400 font-medium text-sm">
+                        Gerencie seus agendamentos
+                    </p>
+                </div>
+
+                {/* Mobile: Toggle Calendar Button */}
+                <button
+                    onClick={() => setShowCalendar(!showCalendar)}
+                    className="lg:hidden flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-700 dark:text-zinc-300 font-semibold text-sm"
+                >
+                    <span className="material-icons text-lg">{showCalendar ? 'event_busy' : 'calendar_month'}</span>
+                    {showCalendar ? 'Ocultar Calendário' : 'Mostrar Calendário'}
+                </button>
+            </div>
+
+            <div className="flex flex-col lg:flex-row gap-4 md:gap-6 items-start">
+                {/* Mini Calendar Card - Collapsible on mobile */}
+                <div className={`w-full lg:w-72 flex-shrink-0 ${showCalendar ? 'block' : 'hidden lg:block'}`}>
+                    <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#333333] dark:border-zinc-800 p-4 md:p-5">
+                        {/* Month Navigation */}
+                        <div className="flex justify-between items-center mb-4">
+                            <button
+                                onClick={prevMonth}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                            >
+                                <span className="material-icons text-gray-600 dark:text-zinc-400 text-xl">chevron_left</span>
+                            </button>
+                            <span className="font-bold text-sm text-gray-900 dark:text-zinc-50">
+                                {monthNames[currentMonth.getMonth()]} {currentMonth.getFullYear()}
+                            </span>
+                            <button
+                                onClick={nextMonth}
+                                className="p-2 hover:bg-gray-100 dark:hover:bg-zinc-800 rounded-lg transition-colors"
+                            >
+                                <span className="material-icons text-gray-600 dark:text-zinc-400 text-xl">chevron_right</span>
+                            </button>
+                        </div>
+
+                        {/* Day Names */}
+                        <div className="grid grid-cols-7 mb-2">
+                            {dayNames.map(day => (
+                                <div key={day} className="text-center text-[10px] font-semibold text-gray-400 dark:text-zinc-500 uppercase tracking-wider py-1">
+                                    {day}
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* Calendar Grid */}
+                        <div className="grid grid-cols-7 gap-0.5">
+                            {Array.from({ length: firstDayOfMonth }).map((_, i) => (
+                                <div key={`empty-${i}`} className="p-2" />
+                            ))}
+
+                            {Array.from({ length: daysInMonth }).map((_, i) => {
+                                const date = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), i + 1);
+                                const hasAppt = hasAppointment(date);
+                                const selected = isSelected(date);
+                                const today = isToday(date);
+
+                                return (
+                                    <button
+                                        key={i}
+                                        onClick={() => setSelectedDate(date)}
+                                        className={`relative p-2 rounded-lg text-sm font-medium transition-all
+                      ${selected
+                                                ? 'bg-black dark:bg-white text-white dark:text-black font-bold'
+                                                : today
+                                                    ? 'text-primary font-bold'
+                                                    : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-100 dark:hover:bg-zinc-800'
+                                            }`}
+                                    >
+                                        {i + 1}
+                                        {hasAppt && !selected && (
+                                            <div className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1 h-1 rounded-full bg-primary" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        {/* New Appointment Button */}
+                        <button
+                            onClick={handleNewAppointment}
+                            className="w-full mt-5 py-3.5 rounded-xl btn-gradient text-black font-bold text-sm flex items-center justify-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+                        >
+                            <span className="material-icons text-lg">add</span>
+                            Novo Agendamento
+                        </button>
+                    </div>
+                </div>
+
+                {/* Appointments List Card */}
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-[#333333] dark:border-zinc-800 p-4 md:p-6 flex-1 min-h-[400px] md:min-h-[500px] w-full">
+                    {/* Card Header */}
+                    <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center mb-5 gap-3">
+                        <h2 className="text-lg font-bold text-gray-900 dark:text-zinc-50">
+                            Agendamentos
+                        </h2>
+
+                        <div className="flex flex-wrap gap-2 sm:gap-3 items-center">
+                            {/* View Toggle */}
+                            <div className="flex bg-gray-100 dark:bg-zinc-800 rounded-xl p-1">
+                                <button
+                                    onClick={() => setViewMode('day')}
+                                    className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs transition-all
+                    ${viewMode === 'day'
+                                            ? 'bg-black dark:bg-white text-white dark:text-black'
+                                            : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700'
+                                        }`}
+                                >
+                                    Dia
+                                </button>
+                                <button
+                                    onClick={() => setViewMode('week')}
+                                    className={`px-3 sm:px-4 py-2 rounded-lg font-semibold text-xs transition-all
+                    ${viewMode === 'week'
+                                            ? 'bg-black dark:bg-white text-white dark:text-black'
+                                            : 'text-gray-500 dark:text-zinc-400 hover:text-gray-700'
+                                        }`}
+                                >
+                                    Semana
+                                </button>
+                            </div>
+
+                            {/* Artist Filter - Only show if user can view all agenda */}
+                            {permissions.canViewAllAgenda && (
+                                <select
+                                    value={selectedArtist}
+                                    onChange={(e) => setSelectedArtist(e.target.value)}
+                                    className="px-3 sm:px-4 py-2.5 rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs font-semibold text-gray-700 dark:text-zinc-300 outline-none focus:ring-2 focus:ring-primary cursor-pointer min-w-[140px]"
+                                >
+                                    <option value="all">Todos os Artistas</option>
+                                    {artists.map(artist => (
+                                        <option key={artist.id} value={artist.profile_id}>
+                                            {artist.full_name}
+                                        </option>
+                                    ))}
+                                </select>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Week View Header */}
+                    {viewMode === 'week' && (
+                        <div className="flex gap-1.5 sm:gap-2 mb-4 overflow-x-auto pb-2 -mx-2 px-2">
+                            {weekDates.map((date, idx) => {
+                                const isSelectedDay = isSelected(date);
+                                const hasAppt = hasAppointment(date);
+                                return (
+                                    <button
+                                        key={idx}
+                                        onClick={() => setSelectedDate(date)}
+                                        className={`flex-shrink-0 px-2 sm:px-4 py-2 sm:py-3 rounded-xl border text-center transition-all min-w-[50px] sm:min-w-[70px]
+                      ${isSelectedDay
+                                                ? 'border-black dark:border-white bg-gray-50 dark:bg-zinc-800'
+                                                : 'border-gray-200 dark:border-zinc-700 hover:border-gray-300'
+                                            }`}
+                                    >
+                                        <div className="text-[9px] sm:text-[10px] font-semibold text-gray-400 dark:text-zinc-500 uppercase mb-0.5 sm:mb-1">
+                                            {dayNames[date.getDay()]}
+                                        </div>
+                                        <div className={`text-sm sm:text-base font-bold ${isSelectedDay ? 'text-black dark:text-white' : 'text-gray-700 dark:text-zinc-300'}`}>
+                                            {date.getDate()}
+                                        </div>
+                                        {hasAppt && (
+                                            <div className="w-1 sm:w-1.5 h-1 sm:h-1.5 rounded-full bg-primary mx-auto mt-1 sm:mt-1.5" />
+                                        )}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {/* Selected Date Display */}
+                    <div className="flex flex-wrap items-center gap-2 mb-4 pb-4 border-b border-gray-100 dark:border-zinc-800">
+                        <span className="text-sm font-bold text-gray-900 dark:text-zinc-50">
+                            {viewMode === 'day'
+                                ? `${dayNames[selectedDate.getDay()]}, ${selectedDate.getDate()} de ${monthNames[selectedDate.getMonth()]}`
+                                : `Semana de ${weekDates[0].getDate()} - ${weekDates[6].getDate()} ${monthNames[weekDates[0].getMonth()]}`
+                            }
+                        </span>
+                        <span className="text-xs font-semibold text-gray-500 dark:text-zinc-400 bg-gray-100 dark:bg-zinc-800 px-2.5 py-1 rounded-full">
+                            {filteredAppointments.length} agendamento{filteredAppointments.length !== 1 ? 's' : ''}
+                        </span>
+                    </div>
+
+                    {/* Appointments List */}
+                    <div className="space-y-3">
+                        {isLoading ? (
+                            <div className="flex items-center justify-center py-16 text-gray-400">
+                                <span className="material-icons animate-spin mr-2">sync</span>
+                                Carregando...
+                            </div>
+                        ) : filteredAppointments.length > 0 ? (
+                            filteredAppointments.map((appointment) => (
+                                <div
+                                    key={appointment.id}
+                                    onClick={() => handleEditAppointment(appointment)}
+                                    className="flex flex-col sm:flex-row sm:items-center p-3 sm:p-4 rounded-xl border border-gray-200 dark:border-zinc-700 bg-white dark:bg-zinc-900 cursor-pointer transition-all hover:border-gray-400 dark:hover:border-zinc-500 hover:shadow-md gap-3 sm:gap-4 group"
+                                >
+                                    {/* Mobile: Top Row with Time and Artist */}
+                                    <div className="flex items-center justify-between sm:contents">
+                                        {/* Time Column */}
+                                        <div className="min-w-[60px] sm:min-w-[70px] text-left sm:text-center">
+                                            {viewMode === 'week' && (
+                                                <div className="text-[10px] font-semibold text-gray-400 uppercase mb-0.5">
+                                                    {dayNames[new Date(appointment.start_time || appointment.date).getDay()]}
+                                                </div>
+                                            )}
+                                            <div className="text-base sm:text-lg font-bold text-gray-900 dark:text-zinc-50">
+                                                {appointment.time?.split(' - ')[0] || new Date(appointment.start_time || appointment.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                                            </div>
+                                        </div>
+
+                                        {/* Mobile: Artist Badge (shown on right on mobile) */}
+                                        <div
+                                            className="flex sm:hidden items-center gap-2 px-2.5 py-1 rounded-full"
+                                            style={{ backgroundColor: `${appointment.artistColor || '#92FFAD'}20` }}
+                                        >
+                                            <div
+                                                className="w-2 h-2 rounded-full"
+                                                style={{ backgroundColor: appointment.artistColor || '#92FFAD' }}
+                                            />
+                                            <span className="text-xs font-semibold text-gray-700 dark:text-zinc-300 truncate max-w-[80px]">
+                                                {appointment.artist}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Desktop: Divider */}
+                                    <div
+                                        className="hidden sm:block w-1 h-10 rounded-full flex-shrink-0"
+                                        style={{ backgroundColor: appointment.artistColor || '#92FFAD' }}
+                                    />
+
+                                    {/* Info Column */}
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-bold text-gray-900 dark:text-zinc-50 mb-0.5 truncate">
+                                            {appointment.clientName}
+                                        </div>
+                                        <div className="text-xs text-gray-500 dark:text-zinc-400 font-medium truncate">
+                                            {appointment.title}
+                                        </div>
+                                    </div>
+
+                                    {/* Desktop: Artist Badge */}
+                                    <div
+                                        className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-full flex-shrink-0"
+                                        style={{ backgroundColor: `${appointment.artistColor || '#92FFAD'}20` }}
+                                    >
+                                        <div
+                                            className="w-2 h-2 rounded-full"
+                                            style={{ backgroundColor: appointment.artistColor || '#92FFAD' }}
+                                        />
+                                        <span className="text-xs font-semibold text-gray-700 dark:text-zinc-300">
+                                            {appointment.artist}
+                                        </span>
+                                    </div>
+
+                                    {/* Action Button */}
+                                    <button className="hidden sm:flex p-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-400 group-hover:bg-primary group-hover:text-black transition-all flex-shrink-0">
+                                        <span className="material-icons text-lg">chevron_right</span>
+                                    </button>
+                                </div>
+                            ))
+                        ) : (
+                            <div className="flex flex-col items-center justify-center py-12 sm:py-16 text-gray-400">
+                                <span className="material-icons text-4xl sm:text-5xl mb-3 opacity-30">event_busy</span>
+                                <span className="font-semibold text-sm">Nenhum agendamento</span>
+                                <span className="text-xs mt-1">
+                                    {viewMode === 'day' ? 'para este dia' : 'para esta semana'}
+                                </span>
+                            </div>
                         )}
                     </div>
-                    <button
-                        onClick={() => {
-                            setSelectedDate(new Date());
-                            setEditingAppointment(null);
-                            setIsModalOpen(true);
-                        }}
-                        className="w-full md:w-auto flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-[#92FFAD] to-[#5CDFF0] text-black font-bold rounded-xl hover:shadow-lg hover:scale-105 transition-all"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
-                        </svg>
-                        Novo Agendamento
-                    </button>
-                </div>
-
-                {/* Calendar */}
-                <div className={`flex-1 bg-white rounded-2xl border border-[#333333] overflow-hidden flex flex-col ${view === 'agenda' ? '' : 'p-4 md:p-6'}`}>
-
-                    {/* Custom Toolbar Rendering for consistency */}
-                    <CustomToolbar
-                        date={date}
-                        view={view}
-                        onNavigate={handleNavigate}
-                        onView={handleViewChange}
-                    />
-
-                    {view === 'agenda' ? (
-                        <CustomAgendaView />
-                    ) : (
-                        <Calendar
-                            localizer={localizer}
-                            events={events}
-                            startAccessor="start"
-                            endAccessor="end"
-                            style={{ height: 'calc(100vh - 250px)', minHeight: '500px' }}
-                            view={view}
-                            onView={handleViewChange}
-                            date={date}
-                            onNavigate={handleNavigate}
-                            onSelectEvent={handleSelectEvent}
-                            onSelectSlot={handleSelectSlot}
-                            selectable
-                            popup
-                            messages={messages}
-                            culture="pt-BR"
-                            eventPropGetter={eventStyleGetter}
-                            views={['month', 'week', 'day', 'agenda']}
-                            components={{
-                                toolbar: () => null, // Hide default toolbar since we render CustomToolbar above
-                                event: CustomEvent
-                            }}
-                            step={30}
-                            timeslots={2}
-                            min={new Date(0, 0, 0, 7, 0, 0)} // Start at 7 AM
-                            max={new Date(0, 0, 0, 22, 0, 0)} // End at 10 PM
-                        />
-                    )}
                 </div>
             </div>
-        </ErrorBoundary>
+
+            {/* Mobile: Floating New Appointment Button */}
+            <button
+                onClick={handleNewAppointment}
+                className="lg:hidden fixed bottom-24 right-4 w-14 h-14 rounded-full btn-gradient text-black font-bold shadow-xl shadow-primary/30 flex items-center justify-center z-40 hover:scale-105 active:scale-95 transition-all"
+            >
+                <span className="material-icons text-2xl">add</span>
+            </button>
+        </div>
     );
 };
 

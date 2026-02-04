@@ -70,7 +70,8 @@ const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({ isOpen, onClo
         if (!currentStudio?.id) return;
         const [clientsData, teamData] = await Promise.all([
             clientService.getClients(currentStudio.id),
-            teamService.getTeamMembers(currentStudio.id)
+            // Use getProfessionals to only show MASTER, ARTIST, PIERCER (exclude CLIENT)
+            teamService.getProfessionals(currentStudio.id)
         ]);
         setClients(clientsData);
         setArtists(teamData);

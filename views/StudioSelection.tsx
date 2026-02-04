@@ -29,6 +29,7 @@ const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio,
   const [isAdmin, setIsAdmin] = useState(false);
   const [studios, setStudios] = useState<Studio[]>([]);
   const [loading, setLoading] = useState(true);
+  const [userName, setUserName] = useState<string>(''); // Real user name from profile
 
   useEffect(() => {
     const fetchData = async () => {
@@ -45,11 +46,17 @@ const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio,
 
         if (profileError) {
           console.error('Profile fetch error:', profileError);
-        } else if (profile?.is_platform_admin) {
-          console.log('User is admin');
-          setIsAdmin(true);
         } else {
-          console.log('User is NOT admin', profile);
+          // Set the real user name from profile
+          if (profile?.full_name) {
+            setUserName(profile.full_name);
+          }
+          if (profile?.is_platform_admin) {
+            console.log('User is admin');
+            setIsAdmin(true);
+          } else {
+            console.log('User is NOT admin', profile);
+          }
         }
 
         // 2. Fetch Studios (Manual Two-Step to avoid inner join RLS weirdness)
@@ -103,13 +110,16 @@ const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio,
     fetchData();
   }, [session]);
 
+  // Use real name from profile, fallback to user prop name
+  const displayName = userName || user.name || 'Usuário';
+
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
       <FloatingHeader user={user} onToggleMenu={() => { }} />
 
       <main className="pt-32 pb-16 px-6 max-w-7xl mx-auto">
         <div className="mb-12">
-          <h1 className="text-4xl font-extrabold tracking-tight mb-2">Bem-vindo de volta, {user.name.split(' ')[0]}</h1>
+          <h1 className="text-4xl font-extrabold tracking-tight mb-2">Bem-vindo de volta, {displayName.split(' ')[0]}</h1>
           <p className="text-slate-500 dark:text-slate-400">Selecione qual estúdio você gostaria de gerenciar ou visualizar hoje.</p>
         </div>
 

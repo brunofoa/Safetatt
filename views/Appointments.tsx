@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { sessionService } from '../services/sessionService';
 import { teamService, TeamMember } from '../services/teamService';
 import { Appointment } from '../types';
+import { usePermissions } from '../hooks/usePermissions';
 
 
 interface AppointmentsProps {
@@ -36,6 +37,7 @@ const isDateInThisWeek = (dateString: string) => {
 
 const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
   const { currentStudio } = useAuth(); // Import useAuth if missing
+  const { permissions, currentUserId } = usePermissions();
   // State for Pagination and Filters
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -86,6 +88,11 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
 
     setIsLoading(true);
     try {
+      // If user can't view all sessions, force filter to their own ID
+      const effectiveProfessionalId = permissions.canViewAllSessions
+        ? filterProfessionalId
+        : currentUserId;
+
       const { data, count } = await sessionService.getSessionsLight(
         currentStudio.id,
         page,
@@ -93,7 +100,7 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
         {
           search: debouncedSearch,
           status: statusFilter || undefined,
-          professionalId: filterProfessionalId || undefined,
+          professionalId: effectiveProfessionalId || undefined,
           sortOrder: sortOrder
         }
       );
@@ -153,10 +160,11 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
     }
   }, [currentStudio?.id, page, debouncedSearch, statusFilter, filterProfessionalId, sortOrder]);
 
-  // Fetch Professionals for Filter
+  // Fetch Professionals for Filter (exclude clients)
   useEffect(() => {
     if (currentStudio?.id) {
-      teamService.getTeamMembers(currentStudio.id).then(setProfessionals);
+      // Use getProfessionals to only show MASTER, ARTIST, PIERCER
+      teamService.getProfessionals(currentStudio.id).then(setProfessionals);
     }
   }, [currentStudio?.id]);
 
@@ -223,13 +231,15 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
           <h1 className="text-4xl font-extrabold tracking-tight dark:text-zinc-50 mb-2 capitalize">Atendimentos</h1>
           <p className="text-slate-500 dark:text-zinc-400 font-medium">Gerencie sua agenda e sessões de hoje</p>
         </div>
-        <button
-          onClick={onNewAppointment}
-          className="btn-gradient text-black font-bold py-3.5 px-8 rounded-2xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
-        >
-          <span className="material-icons">add_circle</span>
-          Novo Atendimento
-        </button>
+        {permissions.canCreateSession && (
+          <button
+            onClick={onNewAppointment}
+            className="btn-gradient text-black font-bold py-3.5 px-8 rounded-2xl flex items-center gap-2 shadow-lg shadow-primary/20 hover:scale-[1.02] active:scale-[0.98] transition-all"
+          >
+            <span className="material-icons">add_circle</span>
+            Novo Atendimento
+          </button>
+        )}
       </div>
 
       {/* Search and Filters Bar */}
@@ -290,17 +300,21 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
                 <button onClick={() => { setStatusFilter('Finalizado'); setShowStatusMenu(false); }} className="w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 text-blue-500">Finalizados</button>
 
                 <div className="border-t border-gray-100 dark:border-zinc-800/50 my-1"></div>
-                <p className="px-4 py-2 text-[10px] uppercase font-bold text-gray-400">Profissional</p>
-                {professionals.map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => { setFilterProfessionalId(p.profile_id); setShowStatusMenu(false); }}
-                    className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 flex items-center gap-2 ${filterProfessionalId === p.profile_id ? 'text-[#5CDFF0]' : 'dark:text-zinc-50'}`}
-                  >
-                    {p.avatar_url && <img src={p.avatar_url} className="w-5 h-5 rounded-full" />}
-                    {p.full_name}
-                  </button>
-                ))}
+                {permissions.canFilterByProfessional && (
+                  <>
+                    <p className="px-4 py-2 text-[10px] uppercase font-bold text-gray-400">Profissional</p>
+                    {professionals.map(p => (
+                      <button
+                        key={p.id}
+                        onClick={() => { setFilterProfessionalId(p.profile_id); setShowStatusMenu(false); }}
+                        className={`w-full text-left px-4 py-3 text-sm font-medium hover:bg-gray-50 dark:hover:bg-zinc-800 flex items-center gap-2 ${filterProfessionalId === p.profile_id ? 'text-[#5CDFF0]' : 'dark:text-zinc-50'}`}
+                      >
+                        {p.avatar_url && <img src={p.avatar_url} className="w-5 h-5 rounded-full" />}
+                        {p.full_name}
+                      </button>
+                    ))}
+                  </>
+                )}
               </div>
             )}
           </div>

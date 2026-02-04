@@ -4,6 +4,7 @@ import NewClientModal from '../components/NewClientModal';
 import Avatar from '../components/Avatar';
 import { clientService } from '../services/clientService';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 
 
 interface ClientsProps {
@@ -51,6 +52,7 @@ const formatDateCompact = (dateStr: string) => {
 
 const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
   const { currentStudio } = useAuth();
+  const { permissions } = usePermissions();
   const [clients, setClients] = useState<Client[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -243,15 +245,17 @@ const Clients: React.FC<ClientsProps> = ({ onEditClient }) => {
                 </div>
               </div>
 
-              {/* Right: Actions */}
-              <div className="flex-shrink-0 ml-auto self-start md:self-center">
-                <button
-                  onClick={() => onEditClient(client.id)}
-                  className="p-2 text-gray-400 hover:text-primary transition-colors rounded-full hover:bg-white/5"
-                >
-                  <span className="material-icons text-xl">edit</span>
-                </button>
-              </div>
+              {/* Right: Actions - Only show edit if user has permission */}
+              {permissions.canViewClientProfile && (
+                <div className="flex-shrink-0 ml-auto self-start md:self-center">
+                  <button
+                    onClick={() => onEditClient(client.id)}
+                    className="p-2 text-gray-400 hover:text-primary transition-colors rounded-full hover:bg-white/5"
+                  >
+                    <span className="material-icons text-xl">edit</span>
+                  </button>
+                </div>
+              )}
             </div>
           ))
         ) : (

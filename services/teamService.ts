@@ -14,8 +14,12 @@ export interface TeamMember {
     cpf?: string;
 }
 
+// Define staff roles (exclude CLIENT)
+const STAFF_ROLES = ['MASTER', 'ARTIST', 'PIERCER', 'RECEPTIONIST'];
+const PROFESSIONAL_ROLES = ['MASTER', 'ARTIST', 'PIERCER']; // Roles that perform services
+
 export const teamService = {
-    // List members
+    // List ALL members (including clients if they exist in studio_members)
     async getTeamMembers(studioId: string): Promise<TeamMember[]> {
         // 🔒 SECURITY: Filter by studio_id to prevent data leak
         if (!studioId) {
@@ -65,13 +69,128 @@ export const teamService = {
         }));
     },
 
+    // List only STAFF members (excludes CLIENT role)
+    async getStaffMembers(studioId: string): Promise<TeamMember[]> {
+        if (!studioId) {
+            console.error('❌ SECURITY: studioId is required for getStaffMembers');
+            return [];
+        }
+
+        console.log('🔒 Fetching STAFF members for studio:', studioId);
+
+        const { data, error } = await supabase
+            .from('studio_members')
+            .select(`
+                id,
+                role,
+                studio_id,
+                profile_id,
+                profiles!studio_members_profile_id_fkey (
+                    full_name,
+                    email,
+                    avatar_url,
+                    display_color,
+                    phone,
+                    cpf
+                )
+            `)
+            .eq('studio_id', studioId)
+            .neq('role', 'CLIENT'); // 🔒 Exclude CLIENT role only
+
+        if (error) {
+            console.error('Error fetching staff members:', error);
+            return [];
+        }
+
+        console.log('✅ Staff members fetched:', data?.length, 'for studio:', studioId);
+
+        return data.map((item: any) => ({
+            id: item.id,
+            profile_id: item.profile_id,
+            studio_id: item.studio_id,
+            role: item.role,
+            full_name: item.profiles?.full_name || 'Usuário',
+            email: item.profiles?.email || '',
+            avatar_url: item.profiles?.avatar_url || '',
+            color: item.profiles?.display_color || '#92FFAD',
+            phone: item.profiles?.phone || '',
+            cpf: item.profiles?.cpf || ''
+        }));
+    },
+
+    // List only PROFESSIONALS (excludes CLIENT) - for service dropdowns
+    async getProfessionals(studioId: string): Promise<TeamMember[]> {
+        if (!studioId) {
+            console.error('❌ SECURITY: studioId is required for getProfessionals');
+            return [];
+        }
+
+        console.log('🔒 Fetching PROFESSIONALS for studio:', studioId);
+
+        const { data, error } = await supabase
+            .from('studio_members')
+            .select(`
+                id,
+                role,
+                studio_id,
+                profile_id,
+                profiles!studio_members_profile_id_fkey (
+                    full_name,
+                    email,
+                    avatar_url,
+                    display_color,
+                    phone,
+                    cpf
+                )
+            `)
+            .eq('studio_id', studioId)
+            .neq('role', 'CLIENT'); // 🔒 Exclude CLIENT role
+
+        if (error) {
+            console.error('Error fetching professionals:', error);
+            return [];
+        }
+
+        console.log('✅ Professionals fetched:', data?.length, 'for studio:', studioId);
+
+        return data.map((item: any) => ({
+            id: item.id,
+            profile_id: item.profile_id,
+            studio_id: item.studio_id,
+            role: item.role,
+            full_name: item.profiles?.full_name || 'Usuário',
+            email: item.profiles?.email || '',
+            avatar_url: item.profiles?.avatar_url || '',
+            color: item.profiles?.display_color || '#92FFAD',
+            phone: item.profiles?.phone || '',
+            cpf: item.profiles?.cpf || ''
+        }));
+    },
+
     // Invite User (Calls Edge Function)
     async inviteMember(inviteData: { email: string; role: string; studioId: string; fullName: string; cpf?: string; phone?: string; color?: string; avatarUrl?: string }): Promise<{ success: boolean; message?: string; error?: any }> {
         try {
+            // Map frontend role names to database role values
+            const roleMap: Record<string, string> = {
+                'master': 'MASTER',
+                'tatuador': 'ARTIST',
+                'piercer': 'PIERCER',
+                'recepcionista': 'RECEPTIONIST',
+                'cliente': 'CLIENT',
+                // Also accept uppercase directly
+                'MASTER': 'MASTER',
+                'ARTIST': 'ARTIST',
+                'PIERCER': 'PIERCER',
+                'RECEPTIONIST': 'RECEPTIONIST',
+                'CLIENT': 'CLIENT'
+            };
+
+            const normalizedRole = roleMap[inviteData.role.toLowerCase()] || inviteData.role.toUpperCase();
+
             const { data, error } = await supabase.functions.invoke('invite-user', {
                 body: {
                     email: inviteData.email,
-                    role: inviteData.role,
+                    role: normalizedRole,
                     studio_id: inviteData.studioId,
                     type: 'staff',
                     fullName: inviteData.fullName,

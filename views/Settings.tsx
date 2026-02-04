@@ -250,9 +250,10 @@ const Settings: React.FC = () => {
 
   const loadTeamMembers = async () => {
     if (!currentStudio?.id) return;
-    console.log('🔒 Loading members for studio:', currentStudio.id);
-    const members = await teamService.getTeamMembers(currentStudio.id);
-    console.log('✅ Members loaded:', members.length);
+    console.log('🔒 Loading STAFF members for studio:', currentStudio.id);
+    // Use getStaffMembers to exclude CLIENTs from the user management list
+    const members = await teamService.getStaffMembers(currentStudio.id);
+    console.log('✅ Staff members loaded:', members.length);
     setUsers(members);
   };
 

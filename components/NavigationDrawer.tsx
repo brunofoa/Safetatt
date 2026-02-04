@@ -1,6 +1,7 @@
 import React from 'react';
 import { Screen, User } from '../types';
 import { useAuth } from '../contexts/AuthContext';
+import { usePermissions } from '../hooks/usePermissions';
 import {
     SquaresFour,
     CalendarCheck,
@@ -26,6 +27,7 @@ interface NavigationDrawerProps {
 
 const NavigationDrawer: React.FC<NavigationDrawerProps> = ({ user, currentScreen, onNavigate, isOpen, onClose }) => {
     const { signOut } = useAuth();
+    const { permissions } = usePermissions();
     const [isDarkMode, setIsDarkMode] = React.useState(false);
 
     React.useEffect(() => {
@@ -60,13 +62,13 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({ user, currentScreen
     };
 
     const navItems = [
-        { label: 'Dashboard', screen: Screen.DASHBOARD, icon: <SquaresFour size={24} weight="duotone" /> },
-        { label: 'Agenda', screen: Screen.AGENDA, icon: <CalendarCheck size={24} weight="duotone" /> },
-        { label: 'Atendimentos', screen: Screen.APPOINTMENTS, icon: <FileText size={24} weight="duotone" /> },
-        { label: 'Clientes', screen: Screen.CLIENTS, icon: <Users size={24} weight="duotone" /> },
-        { label: 'Marketing', screen: Screen.MARKETING, icon: <Megaphone size={24} weight="duotone" /> },
-        { label: 'Cashback', screen: Screen.LOYALTY, icon: <Ticket size={24} weight="duotone" /> },
-        { label: 'Configurações', screen: Screen.SETTINGS, icon: <Gear size={24} weight="duotone" /> },
+        { label: 'Dashboard', screen: Screen.DASHBOARD, icon: <SquaresFour size={24} weight="duotone" />, show: true },
+        { label: 'Agenda', screen: Screen.AGENDA, icon: <CalendarCheck size={24} weight="duotone" />, show: true },
+        { label: 'Atendimentos', screen: Screen.APPOINTMENTS, icon: <FileText size={24} weight="duotone" />, show: true },
+        { label: 'Clientes', screen: Screen.CLIENTS, icon: <Users size={24} weight="duotone" />, show: true },
+        { label: 'Marketing', screen: Screen.MARKETING, icon: <Megaphone size={24} weight="duotone" />, show: permissions.canAccessMarketing },
+        { label: 'Cashback', screen: Screen.LOYALTY, icon: <Ticket size={24} weight="duotone" />, show: permissions.canAccessLoyalty },
+        { label: 'Configurações', screen: Screen.SETTINGS, icon: <Gear size={24} weight="duotone" />, show: permissions.canAccessSettings },
     ];
 
     return (
@@ -98,7 +100,7 @@ const NavigationDrawer: React.FC<NavigationDrawerProps> = ({ user, currentScreen
 
                     {/* Navigation Links */}
                     <nav className="flex-1 space-y-2">
-                        {navItems.map((item) => (
+                        {navItems.filter(item => item.show).map((item) => (
                             <button
                                 key={item.screen}
                                 onClick={() => {
