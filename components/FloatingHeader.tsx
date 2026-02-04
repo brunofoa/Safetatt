@@ -25,9 +25,6 @@ const FloatingHeader: React.FC<FloatingHeaderProps> = ({ user, onToggleMenu }) =
                             {user.name.split(' ')[0]}<br />
                             <span className="text-[10px] text-primary opacity-80 font-normal">{user.role}</span>
                         </span>
-                        <div className="h-8 w-8 rounded-full border border-white/20 overflow-hidden">
-                            <img src={user.avatar} alt="User" className="w-full h-full object-cover" />
-                        </div>
                     </div>
 
                     {/* Menu Toggle Button */}

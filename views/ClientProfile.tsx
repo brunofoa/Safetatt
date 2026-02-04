@@ -16,10 +16,23 @@ interface ClientProfileProps {
 
 const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'dados', onBack }) => {
   const [activeTab, setActiveTab] = useState(initialTab);
+  // Mobile drill-down navigation state: 'menu' shows profile + menu, 'content' shows section content
+  const [mobileView, setMobileView] = useState<'menu' | 'content'>('menu');
 
   useEffect(() => {
     setActiveTab(initialTab);
   }, [initialTab]);
+
+  // Handle tab selection - on mobile, switch to content view
+  const handleTabSelect = (tabId: string) => {
+    setActiveTab(tabId);
+    setMobileView('content');
+  };
+
+  // Handle mobile back button - return to menu view
+  const handleMobileBack = () => {
+    setMobileView('menu');
+  };
 
   // Client Data State
   const [client, setClient] = useState<Client | null>(null);
@@ -307,13 +320,28 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
         />
       </ErrorBoundary>
 
-      <button onClick={onBack} className="mb-6 flex items-center text-sm font-bold text-gray-500 hover:text-primary transition-colors">
+      {/* Desktop: Always show "Voltar para Clientes" | Mobile: Show only in menu view */}
+      <button
+        onClick={onBack}
+        className={`mb-6 flex items-center text-sm font-bold text-gray-500 hover:text-primary transition-colors ${mobileView === 'content' ? 'hidden md:flex' : ''}`}
+      >
         <span className="material-icons mr-2 text-lg">arrow_back</span>
         Voltar para Clientes
       </button>
 
-      {/* Header */}
-      <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 shadow-sm border border-gray-200 dark:border-zinc-800 mb-8 animate-fade-in relative overflow-hidden">
+      {/* Mobile Back Button - Only visible in content view on mobile */}
+      {mobileView === 'content' && (
+        <button
+          onClick={handleMobileBack}
+          className="md:hidden mb-6 flex items-center text-sm font-bold text-gray-500 hover:text-primary transition-colors"
+        >
+          <span className="material-icons mr-2 text-lg">arrow_back</span>
+          Voltar
+        </button>
+      )}
+
+      {/* Header/Profile Card - Hidden on mobile when viewing content */}
+      <div className={`bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 dark:border-zinc-800 mb-8 animate-fade-in relative overflow-hidden ${mobileView === 'content' ? 'hidden md:block' : ''}`}>
         <div className="flex flex-col md:flex-row items-center gap-6 relative z-10">
           <div className="relative group">
             <Avatar
@@ -326,11 +354,11 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
             </button>
           </div>
           <div className="text-center md:text-left flex-1">
-            <h1 className="text-3xl font-extrabold text-gray-900 dark:text-zinc-50 mb-2">{client.name}</h1>
-            <div className="flex flex-wrap items-center justify-center md:justify-start gap-4 text-sm text-gray-500 dark:text-zinc-400">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-gray-900 dark:text-zinc-50 mb-2">{client.name}</h1>
+            <div className="flex flex-wrap items-center justify-center md:justify-start gap-3 md:gap-4 text-sm text-gray-500 dark:text-zinc-400">
               <span className="flex items-center gap-1">
                 <span className="material-icons text-base">email</span>
-                {client.email}
+                <span className="truncate max-w-[150px] md:max-w-none">{client.email}</span>
               </span>
               <span className="flex items-center gap-1">
                 <span className="material-icons text-base">phone</span>
@@ -352,13 +380,13 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-        {/* Sidebar Tabs */}
-        <div className="lg:col-span-1">
+        {/* Sidebar Tabs - Hidden on mobile when viewing content */}
+        <div className={`lg:col-span-1 ${mobileView === 'content' ? 'hidden md:block' : ''}`}>
           <div className="bg-white dark:bg-zinc-900 rounded-2xl shadow-sm border border-gray-200 dark:border-zinc-800 overflow-hidden">
             {tabs.map((tab) => (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => handleTabSelect(tab.id)}
                 className={`w-full flex items-center gap-3 p-4 text-sm font-bold transition-all border-l-4 ${activeTab === tab.id
                   ? 'border-primary bg-primary/10 text-primary'
                   : 'border-transparent text-gray-500 dark:text-zinc-400 hover:bg-gray-50 dark:hover:bg-zinc-800'
@@ -366,14 +394,16 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
               >
                 <span className="material-icons">{tab.icon}</span>
                 {tab.label}
+                {/* Mobile arrow indicator */}
+                <span className="material-icons ml-auto md:hidden text-gray-400">chevron_right</span>
               </button>
             ))}
           </div>
         </div>
 
-        {/* Content Area */}
-        <div className="lg:col-span-3">
-          <div className="bg-white dark:bg-zinc-900 rounded-3xl p-8 shadow-sm border border-gray-200 dark:border-zinc-800 min-h-[500px]">
+        {/* Content Area - Hidden on mobile when viewing menu */}
+        <div className={`lg:col-span-3 ${mobileView === 'menu' ? 'hidden md:block' : ''}`}>
+          <div className="bg-white dark:bg-zinc-900 rounded-3xl p-6 md:p-8 shadow-sm border border-gray-200 dark:border-zinc-800 min-h-[400px] md:min-h-[500px]">
 
             {activeTab === 'dados' && (
               <div className="animate-fade-in">
@@ -555,11 +585,8 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
 
               return (
                 <div className="animate-fade-in">
-                  <div className="flex justify-between items-center mb-6">
+                  <div className="mb-6">
                     <h2 className="text-xl font-bold text-gray-900 dark:text-zinc-50">Histórico de Atendimentos</h2>
-                    <button className="bg-primary text-black font-bold py-2 px-4 rounded-xl text-sm shadow hover:scale-105 transition-transform">
-                      Novo Atendimento
-                    </button>
                   </div>
 
                   {isLoadingAppointments ? (
@@ -570,34 +597,31 @@ const ClientProfile: React.FC<ClientProfileProps> = ({ clientId, initialTab = 'd
                     <>
                       <div className="space-y-4">
                         {currentAppointments.map((app) => (
-                          <div key={app.id} className="flex flex-col md:flex-row items-center gap-4 p-4 bg-gray-50 dark:bg-zinc-800/50 rounded-2xl border border-gray-100 dark:border-zinc-800 hover:border-primary/50 transition-colors">
-                            <div className="w-16 h-16 rounded-xl bg-gray-200 dark:bg-zinc-700 flex flex-col items-center justify-center text-gray-500 font-bold">
-                              <span className="text-xl">
+                          <div key={app.id} className="flex flex-row items-center gap-4 p-4 bg-white dark:bg-zinc-900 rounded-2xl border border-[#333333] hover:border-primary/50 transition-colors">
+                            <div className="w-14 h-14 md:w-16 md:h-16 rounded-xl bg-gray-100 dark:bg-zinc-800 flex flex-col items-center justify-center text-gray-600 dark:text-zinc-400 font-bold shrink-0">
+                              <span className="text-lg md:text-xl">
                                 {(() => {
                                   const d = new Date(app.date);
                                   return isNaN(d.getTime()) ? '-' : d.getDate();
                                 })()}
                               </span>
-                              <span className="text-xs uppercase">
+                              <span className="text-[10px] md:text-xs uppercase">
                                 {(() => {
                                   const d = new Date(app.date);
                                   return isNaN(d.getTime()) ? '-' : d.toLocaleDateString('pt-BR', { month: 'short' });
                                 })()}
                               </span>
                             </div>
-                            <div className="flex-1 text-center md:text-left">
-                              <h3 className="font-bold text-gray-900 dark:text-zinc-50">{app.service}</h3>
-                              <p className="text-sm text-gray-500">{app.professional} • {app.status}</p>
-                            </div>
-                            <div className="font-bold text-gray-900 dark:text-zinc-50">
-                              R$ {Number(app.price).toFixed(2)}
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-bold text-gray-900 dark:text-zinc-50 truncate">{app.service}</h3>
+                              <p className="text-sm text-gray-500 dark:text-zinc-400 truncate">{app.professional}</p>
                             </div>
                             <button
                               onClick={() => {
                                 setSelectedAppointment(app);
                                 setIsDetailsModalOpen(true);
                               }}
-                              className="p-2 text-gray-400 hover:text-primary transition-colors"
+                              className="p-2 text-gray-400 hover:text-primary transition-colors shrink-0"
                             >
                               <span className="material-icons">visibility</span>
                             </button>

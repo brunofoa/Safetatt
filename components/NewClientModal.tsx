@@ -37,8 +37,8 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
     };
 
     const handleSave = async () => {
-        if (!formData.firstName || !formData.phone) {
-            alert('Por favor, preencha pelo menos Nome e Telefone.');
+        if (!formData.firstName || !formData.phone || !formData.email) {
+            alert('Por favor, preencha Nome, Telefone e Email.');
             return;
         }
 
@@ -55,7 +55,7 @@ const NewClientModal: React.FC<NewClientModalProps> = ({ isOpen, onClose, onSucc
                 onClose();
                 if (onSuccess) onSuccess();
             } else {
-                alert('Erro ao salvar cliente: ' + (result.error?.message || 'Erro desconhecido'));
+                alert('Erro ao salvar cliente: ' + (typeof result.error === 'string' ? result.error : result.error?.message || 'Erro desconhecido'));
             }
         } catch (error) {
             console.error(error);

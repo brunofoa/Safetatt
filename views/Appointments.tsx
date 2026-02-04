@@ -11,19 +11,17 @@ interface AppointmentsProps {
   onNewAppointment: () => void;
 }
 
-// Date formatting helper
+// Date formatting helper - returns dd/mm/yy format
 const formatDateDisplay = (dateString: string) => {
   if (!dateString) return '';
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return '-';
 
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear().toString().slice(-2);
 
-  if (date.toDateString() === today.toDateString()) return 'Hoje';
-  if (date.toDateString() === tomorrow.toDateString()) return 'Amanhã';
-  return date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' });
+  return `${day}/${month}/${year}`;
 };
 
 // Check if date is in current week
@@ -318,25 +316,32 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
           <table className="w-full text-left">
             <thead>
               <tr className="border-b border-gray-100 dark:border-zinc-800">
-                <th className="px-8 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Cliente</th>
-                <th className="px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Data</th>
-                <th className="px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Tatuador</th>
-                <th className="px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Título</th>
-                <th className="px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em] text-center">Status</th>
-                <th className="px-8 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em] text-right">Ações</th>
+                {/* Cliente - hidden on mobile (< sm) */}
+                <th className="hidden sm:table-cell px-8 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Cliente</th>
+                {/* Data - always visible */}
+                <th className="px-4 sm:px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Data</th>
+                {/* Tatuador - hidden on mobile and tablet (< md) */}
+                <th className="hidden md:table-cell px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Tatuador</th>
+                {/* Título - always visible */}
+                <th className="px-4 sm:px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em]">Título</th>
+                {/* Status - hidden on smaller screens (< lg) */}
+                <th className="hidden lg:table-cell px-6 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em] text-center">Status</th>
+                {/* Ações - always visible */}
+                <th className="px-4 sm:px-8 py-5 text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-[0.2em] text-right">Ações</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50 dark:divide-zinc-800/30">
               {isLoading ? (
                 <tr>
-                  <td colSpan={6} className="px-8 py-12 text-center text-gray-400 dark:text-zinc-400 animate-pulse">
+                  <td colSpan={6} className="px-4 sm:px-8 py-12 text-center text-gray-400 dark:text-zinc-400 animate-pulse">
                     Carregando atendimentos...
                   </td>
                 </tr>
               ) : appointments.length > 0 ? (
                 appointments.map((app) => (
                   <tr key={app.id} className="hover:bg-gray-50 dark:hover:bg-zinc-800/30 transition-colors group">
-                    <td className="px-8 py-5">
+                    {/* Cliente - hidden on mobile (< sm) */}
+                    <td className="hidden sm:table-cell px-8 py-5">
                       <div className="flex items-center gap-4">
                         <div className="w-12 h-12 rounded-xl overflow-hidden bg-gray-100 dark:bg-zinc-800 border border-gray-200 dark:border-zinc-700 shrink-0">
                           {app.clientAvatar ? (
@@ -352,42 +357,47 @@ const Appointments: React.FC<AppointmentsProps> = ({ onNewAppointment }) => {
                         </div>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
+                    {/* Data - always visible */}
+                    <td className="px-4 sm:px-6 py-5">
                       <div>
                         <p className="font-bold text-sm text-gray-900 dark:text-zinc-50">{formatDateDisplay(app.date)}</p>
                         <p className="text-[10px] text-gray-500 dark:text-zinc-400 font-medium">{app.time}</p>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
+                    {/* Tatuador - hidden on mobile and tablet (< md) */}
+                    <td className="hidden md:table-cell px-6 py-5">
                       <p className="text-xs font-bold text-gray-900 dark:text-zinc-50 tracking-tight">{app.artist}</p>
                     </td>
-                    <td className="px-6 py-5">
+                    {/* Título - always visible */}
+                    <td className="px-4 sm:px-6 py-5">
                       <div>
                         <p className="font-bold text-sm text-gray-900 dark:text-zinc-50">{app.title}</p>
-                        <p className="text-[10px] text-gray-500 dark:text-zinc-400 font-medium italic">{app.description?.slice(0, 20)}...</p>
+                        <p className="hidden sm:block text-[10px] text-gray-500 dark:text-zinc-400 font-medium italic">{app.description?.slice(0, 20)}...</p>
                       </div>
                     </td>
-                    <td className="px-6 py-5">
+                    {/* Status - hidden on smaller screens (< lg) */}
+                    <td className="hidden lg:table-cell px-6 py-5">
                       <div className="flex justify-center">
                         <span className={`px-4 py-1.5 rounded-full text-[9px] font-black uppercase tracking-[0.1em] ${getStatusStyles(app.status)}`}>
                           {app.status}
                         </span>
                       </div>
                     </td>
-                    <td className="px-8 py-5 text-right">
+                    {/* Ações - always visible */}
+                    <td className="px-4 sm:px-8 py-5 text-right">
                       <button
                         onClick={() => handleOpenDetails(app)}
-                        className="p-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:bg-primary hover:text-black transition-all flex items-center justify-center ml-auto group-hover:scale-105 shadow-sm"
+                        className="p-2 sm:p-2.5 rounded-xl bg-gray-100 dark:bg-zinc-800 text-gray-500 dark:text-zinc-400 hover:bg-primary hover:text-black transition-all flex items-center justify-center ml-auto group-hover:scale-105 shadow-sm"
                       >
                         <span className="material-icons text-lg">visibility</span>
-                        <span className="ml-2 text-[10px] font-bold tracking-widest pr-1">Ver</span>
+                        <span className="hidden sm:inline ml-2 text-[10px] font-bold tracking-widest pr-1">Ver</span>
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="px-8 py-12 text-center text-gray-400 dark:text-zinc-400">
+                  <td colSpan={6} className="px-4 sm:px-8 py-12 text-center text-gray-400 dark:text-zinc-400">
                     <span className="material-icons text-4xl mb-2 opacity-50 block">search_off</span>
                     <p>Nenhum atendimento encontrado para os filtros selecionados.</p>
                   </td>

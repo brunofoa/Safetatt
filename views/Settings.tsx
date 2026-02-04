@@ -143,7 +143,7 @@ const Settings: React.FC = () => {
   const [qrCode, setQrCode] = useState<string | null>(null);
   const [loadingQr, setLoadingQr] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const [waCredentials, setWaCredentials] = useState<{ instanceId?: string, token?: string, instanceName?: string, manualInstanceName?: string }>({});
+  const [waCredentials, setWaCredentials] = useState<{ instanceId?: string, token?: string, instanceName?: string, manualInstanceName?: string, syncInstanceName?: string, syncToken?: string }>({});
   const [debugData, setDebugData] = useState<any>(null); // New Debug State
 
   // Anamnesis State (Restored)
@@ -449,6 +449,131 @@ const Settings: React.FC = () => {
     }
   };
 
+  // WhatsApp: Check status on page load when tab is active
+  // Also try to auto-sync if instance exists in UazAPI but not in database
+  useEffect(() => {
+    const checkWhatsAppStatus = async () => {
+      if (activeTab !== 'whatsapp' || !currentStudio?.id) return;
+
+      const instanceName = currentStudio?.whatsapp_instance_name || waCredentials.instanceName;
+      const token = currentStudio?.whatsapp_token || waCredentials.token;
+
+      // If we have credentials, check status normally
+      if (instanceName && token) {
+        console.log('[WhatsApp] Checking status for:', instanceName);
+        const state = await whatsappService.getConnectionState(instanceName, token);
+        console.log('[WhatsApp] Current state:', state);
+
+        if (state === 'open') {
+          setConnectionStatus('CONNECTED');
+          if (currentStudio?.whatsapp_status !== 'connected') {
+            await whatsappService.updateInstanceStatus(currentStudio.id, 'connected');
+          }
+        } else if (state === 'close') {
+          setConnectionStatus('DISCONNECTED');
+        } else {
+          setConnectionStatus('CONNECTING');
+        }
+        return;
+      }
+
+      // NO LOCAL CREDENTIALS - try to find existing instance in UazAPI and sync
+      console.log('[WhatsApp] No local credentials, checking if instance exists in UazAPI...');
+
+      // Generate expected instance name based on studio name
+      const sanitizedName = currentStudio?.name
+        ?.trim()
+        .toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace(/[^\w-]/g, '')
+        .substring(0, 50);
+      const expectedName = `studio_${sanitizedName}`;
+
+      console.log('[WhatsApp] Looking for existing instance:', expectedName);
+      const existingInstance = await whatsappService.fetchInstanceWithToken(expectedName);
+
+      if (existingInstance && existingInstance.token) {
+        console.log('[WhatsApp] Found existing instance! Syncing to database...');
+
+        // Sync to database
+        const syncResult = await whatsappService.syncInstanceToDatabase(currentStudio.id, {
+          instanceName: existingInstance.instanceName,
+          instanceId: existingInstance.instanceId,
+          token: existingInstance.token
+        });
+
+        if (syncResult.success) {
+          // Update local state
+          setWaCredentials({
+            instanceName: existingInstance.instanceName,
+            instanceId: existingInstance.instanceId,
+            token: existingInstance.token
+          });
+
+          // Check connection state
+          const state = await whatsappService.getConnectionState(existingInstance.instanceName, existingInstance.token);
+          if (state === 'open') {
+            setConnectionStatus('CONNECTED');
+          } else {
+            setConnectionStatus('DISCONNECTED');
+          }
+
+          console.log('[WhatsApp] Sync complete! Instance:', existingInstance.instanceName);
+          // Force page refresh to load new studio data
+          window.location.reload();
+        }
+      } else {
+        console.log('[WhatsApp] No existing instance found, showing activation UI');
+      }
+    };
+
+    checkWhatsAppStatus();
+  }, [activeTab, currentStudio?.whatsapp_instance_name, currentStudio?.whatsapp_token, currentStudio?.id, currentStudio?.whatsapp_status, currentStudio?.name, waCredentials.instanceName, waCredentials.token]);
+
+  // WhatsApp: Polling for status changes (auto-detect QR scan)
+  useEffect(() => {
+    let pollInterval: NodeJS.Timeout | null = null;
+
+    const instanceName = currentStudio?.whatsapp_instance_name || waCredentials.instanceName;
+    const token = currentStudio?.whatsapp_token || waCredentials.token;
+
+    const shouldPoll =
+      activeTab === 'whatsapp' &&
+      connectionStatus !== 'CONNECTED' &&
+      instanceName &&
+      token;
+
+    if (shouldPoll) {
+      console.log('[WhatsApp] Starting status polling...');
+      pollInterval = setInterval(async () => {
+        const state = await whatsappService.getConnectionState(instanceName!, token!);
+        console.log('[WhatsApp] Poll result:', state);
+
+        if (state === 'open') {
+          setConnectionStatus('CONNECTED');
+          setIsConnectModalOpen(false); // Close modal if open
+
+          // Update database status
+          if (currentStudio?.id) {
+            await whatsappService.updateInstanceStatus(currentStudio.id, 'connected');
+          }
+
+          if (pollInterval) {
+            clearInterval(pollInterval);
+            console.log('[WhatsApp] Connection detected! Polling stopped.');
+          }
+        }
+      }, 3000);
+    }
+
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        console.log('[WhatsApp] Polling cleanup');
+      }
+    };
+  }, [activeTab, connectionStatus, currentStudio?.whatsapp_instance_name, currentStudio?.whatsapp_token, currentStudio?.id, waCredentials.instanceName, waCredentials.token]);
+
   const tabs = [
     { id: 'dados', label: 'Dados do estúdio', icon: 'store' },
     { id: 'usuarios', label: 'Usuários', icon: 'people' },
@@ -735,56 +860,113 @@ const Settings: React.FC = () => {
                       <button
                         onClick={async () => {
                           if (!currentStudio?.id || !currentStudio?.name) return;
-                          // ... logic updated below ...
-                          const targetName = waCredentials.manualInstanceName || currentStudio.name;
+
+                          // Generate consistent instanceName from studio name (more readable in UazAPI)
+                          const sanitizedName = currentStudio.name
+                            .trim()
+                            .toLowerCase()
+                            .replace(/\s+/g, '_')
+                            .replace(/[^\w-]/g, '')
+                            .substring(0, 50); // Limit length
+                          const instanceName = `studio_${sanitizedName}`;
+                          const manualName = waCredentials.manualInstanceName;
+                          const targetName = manualName || instanceName;
 
                           if (!confirm(`Deseja conectar à instância "${targetName}"?`)) return;
 
                           setLoadingQr(true);
                           try {
-                            // 1. Provision (Updated to handle raw names if manual)
-                            const res = await whatsappService.provisionInstance(targetName, currentStudio.id);
+                            // STEP A: Check if instance already exists (SINGLETON PATTERN)
+                            console.log('[WhatsApp] Step A: Checking if instance exists...');
+                            const existingInstance = await whatsappService.fetchInstance(targetName);
 
-                            if (res.success && res.instanceName) {
-                              // 2. Refresh Token from DB
-                              const { data: freshStudio } = await supabase
-                                .from('studios')
-                                .select('*')
-                                .eq('id', currentStudio.id)
-                                .single();
+                            if (existingInstance) {
+                              // STEP B: Instance EXISTS - just connect to get new QR Code
+                              console.log('[WhatsApp] Step B: Instance exists, connecting for QR...');
 
-                              if (freshStudio?.whatsapp_token) {
-                                // UPDATE LOCAL STATE so UI updates immediately without reload
-                                setWaCredentials({
-                                  instanceId: freshStudio.whatsapp_instance_id,
-                                  token: freshStudio.whatsapp_token,
-                                  instanceName: res.instanceName
-                                });
-
-                                // 3. Connect for QR
-                                const connectRes = await whatsappService.connectInstance(freshStudio.whatsapp_token);
-
-                                setDebugData({
-                                  ...connectRes.debug,
-                                  _client_check: {
-                                    token_prefix: freshStudio.whatsapp_token?.substring(0, 5),
-                                    has_global_key: !!import.meta.env.VITE_WHATSAPP_GLOBAL_KEY
-                                  }
-                                }); // Show Debug Info Immediately
-
-                                if (connectRes.qrCode) {
-                                  setQrCode(connectRes.qrCode);
-                                  setConnectionStatus('DISCONNECTED');
-                                } else if (connectRes.status === 'CONNECTED') {
-                                  setConnectionStatus('CONNECTED');
-                                }
-
-                                alert('Instância criada! Escaneie o QR Code ao lado.');
-                                // REMOVED: window.location.reload(); 
+                              // Use existing token from DB
+                              const token = currentStudio.whatsapp_token;
+                              if (!token) {
+                                alert('Instância existe mas token não encontrado. Recrie a instância.');
+                                setLoadingQr(false);
+                                return;
                               }
+
+                              setWaCredentials({
+                                instanceId: currentStudio.whatsapp_instance_id,
+                                token: token,
+                                instanceName: targetName
+                              });
+
+                              const connectRes = await whatsappService.connectInstance(token);
+
+                              setDebugData({
+                                ...connectRes.debug,
+                                _singleton: 'Instance already existed, just reconnecting',
+                                _client_check: {
+                                  token_prefix: token?.substring(0, 5),
+                                  has_global_key: !!import.meta.env.VITE_WHATSAPP_GLOBAL_KEY
+                                }
+                              });
+
+                              if (connectRes.qrCode) {
+                                setQrCode(connectRes.qrCode);
+                                setConnectionStatus('DISCONNECTED');
+                                alert('Escaneie o QR Code para reconectar.');
+                              } else if (connectRes.status === 'CONNECTED') {
+                                setConnectionStatus('CONNECTED');
+                                alert('Já está conectado!');
+                              } else {
+                                // Open modal for better UX
+                                setIsConnectModalOpen(true);
+                              }
+
                             } else {
-                              const errorMsg = res.error?.response?.data?.message || res.error?.message || JSON.stringify(res.error);
-                              alert(`Erro ao criar instância: ${errorMsg}`);
+                              // STEP C: Instance does NOT exist - create new one
+                              console.log('[WhatsApp] Step C: Creating new instance...');
+                              const res = await whatsappService.provisionInstance(targetName, currentStudio.id);
+
+                              if (res.success && res.instanceName) {
+                                // Refresh Token from DB
+                                const { data: freshStudio } = await supabase
+                                  .from('studios')
+                                  .select('*')
+                                  .eq('id', currentStudio.id)
+                                  .single();
+
+                                if (freshStudio?.whatsapp_token) {
+                                  // UPDATE LOCAL STATE so UI updates immediately
+                                  setWaCredentials({
+                                    instanceId: freshStudio.whatsapp_instance_id,
+                                    token: freshStudio.whatsapp_token,
+                                    instanceName: res.instanceName
+                                  });
+
+                                  // Connect for QR
+                                  const connectRes = await whatsappService.connectInstance(freshStudio.whatsapp_token);
+
+                                  setDebugData({
+                                    ...connectRes.debug,
+                                    _singleton: 'New instance created',
+                                    _client_check: {
+                                      token_prefix: freshStudio.whatsapp_token?.substring(0, 5),
+                                      has_global_key: !!import.meta.env.VITE_WHATSAPP_GLOBAL_KEY
+                                    }
+                                  });
+
+                                  if (connectRes.qrCode) {
+                                    setQrCode(connectRes.qrCode);
+                                    setConnectionStatus('DISCONNECTED');
+                                  } else if (connectRes.status === 'CONNECTED') {
+                                    setConnectionStatus('CONNECTED');
+                                  }
+
+                                  alert('Instância criada! Escaneie o QR Code ao lado.');
+                                }
+                              } else {
+                                const errorMsg = res.error?.response?.data?.message || res.error?.message || JSON.stringify(res.error);
+                                alert(`Erro ao criar instância: ${errorMsg}`);
+                              }
                             }
                           } catch (err: any) {
                             console.error('Erro detalhado:', err);
@@ -906,8 +1088,9 @@ const Settings: React.FC = () => {
                           isOpen={isConnectModalOpen}
                           onClose={() => setIsConnectModalOpen(false)}
                           token={waCredentials.token || currentStudio?.whatsapp_token || ''}
+                          instanceName={waCredentials.instanceName || currentStudio?.whatsapp_instance_name || ''}
                           onSuccess={() => {
-                            fetchConnectionInfo(); // Using correct refresh function
+                            setConnectionStatus('CONNECTED');
                             setIsConnectModalOpen(false);
                           }}
                         />

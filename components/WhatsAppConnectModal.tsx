@@ -6,11 +6,12 @@ interface WhatsAppConnectModalProps {
     isOpen: boolean;
     onClose: () => void;
     token: string;
+    instanceName: string; // Required for proper status polling
     studioSlug?: string;
     onSuccess: () => void;
 }
 
-const WhatsAppConnectModal: React.FC<WhatsAppConnectModalProps> = ({ isOpen, onClose, token, studioSlug, onSuccess }) => {
+const WhatsAppConnectModal: React.FC<WhatsAppConnectModalProps> = ({ isOpen, onClose, token, instanceName, studioSlug, onSuccess }) => {
     const [mode, setMode] = useState<'QR' | 'PAIRING'>('QR');
     const [qrCode, setQrCode] = useState<string | null>(null);
     const [pairingCode, setPairingCode] = useState<string | null>(null);
@@ -53,16 +54,19 @@ const WhatsAppConnectModal: React.FC<WhatsAppConnectModalProps> = ({ isOpen, onC
         return () => { isMounted = false; };
     }, [isOpen, mode, token, retryCount]);
 
-    // Polling for Status
+    // Polling for Status - uses getConnectionState (not connectInstance which regenerates QR)
     useEffect(() => {
         let pollInterval: NodeJS.Timeout;
 
-        if (isOpen && !isLoading) {
+        if (isOpen && !isLoading && instanceName && token) {
+            console.log('[Modal] Starting status polling for:', instanceName);
             pollInterval = setInterval(async () => {
                 try {
-                    // Check status silently
-                    const res = await whatsappService.connectInstance(token);
-                    if (res.status === 'CONNECTED') {
+                    // Use getConnectionState to check status WITHOUT side effects
+                    const state = await whatsappService.getConnectionState(instanceName, token);
+                    console.log('[Modal] Poll state:', state);
+                    if (state === 'open') {
+                        console.log('[Modal] Connection detected! Closing modal.');
                         onSuccess();
                         onClose();
                     }
@@ -73,9 +77,12 @@ const WhatsAppConnectModal: React.FC<WhatsAppConnectModalProps> = ({ isOpen, onC
         }
 
         return () => {
-            if (pollInterval) clearInterval(pollInterval);
+            if (pollInterval) {
+                clearInterval(pollInterval);
+                console.log('[Modal] Polling stopped');
+            }
         };
-    }, [isOpen, isLoading, token, onSuccess, onClose]);
+    }, [isOpen, isLoading, token, instanceName, onSuccess, onClose]);
 
     const handlePairing = async () => {
         if (!phoneNumber || phoneNumber.length < 10) {

@@ -12,6 +12,11 @@ interface ConnectionResponse {
     debug?: any;
 }
 
+interface SendMessageResponse {
+    success: boolean;
+    error?: any;
+}
+
 const cleanBaseUrl = API_URL?.replace(/\/$/, '');
 const SANITIZED_KEY = GLOBAL_KEY?.trim().replace(/['"]/g, '') || '';
 
@@ -146,6 +151,7 @@ export const connectInstance = async (token: string): Promise<ConnectionResponse
 
 /**
  * Checks connection state to see if QR was scanned.
+ * Handles multiple API response formats: 'open', 'connected', 'close', 'connecting'
  */
 export const getConnectionState = async (instanceName: string, token: string): Promise<'open' | 'close' | 'connecting' | 'unknown'> => {
     try {
@@ -156,10 +162,122 @@ export const getConnectionState = async (instanceName: string, token: string): P
             }
         });
 
-        // Expected: { instance: { state: 'open' } }
-        return response.data?.instance?.state || 'unknown';
-    } catch (error) {
+        // Log full response for debugging
+        console.log('[WhatsApp] ConnectionState Response:', JSON.stringify(response.data));
+
+        // API can return state in different formats
+        const state = response.data?.instance?.state || response.data?.state || 'unknown';
+
+        // Normalize: 'connected' → 'open' for our internal use
+        if (state === 'connected' || state === 'open') {
+            return 'open';
+        }
+        if (state === 'close' || state === 'closed' || state === 'disconnected') {
+            return 'close';
+        }
+        if (state === 'connecting') {
+            return 'connecting';
+        }
+
         return 'unknown';
+    } catch (error: any) {
+        console.error('[WhatsApp] getConnectionState Error:', error.response?.data || error.message);
+        return 'unknown';
+    }
+};
+
+/**
+ * Fetches instance info by name to check if it exists.
+ * Used for singleton pattern - avoid creating duplicate instances.
+ */
+export const fetchInstance = async (instanceName: string): Promise<any | null> => {
+    try {
+        console.log(`[WhatsApp] Checking if instance "${instanceName}" exists...`);
+
+        // Try to get connection state - if it succeeds, instance exists
+        const response = await api.get(`/instance/connectionState/${instanceName}`);
+
+        console.log('[WhatsApp] Instance found:', response.data);
+        return response.data?.instance || response.data;
+    } catch (error: any) {
+        if (error.response?.status === 404 || error.response?.status === 400) {
+            console.log(`[WhatsApp] Instance "${instanceName}" does not exist`);
+            return null; // Instance doesn't exist
+        }
+        // For other errors, log but return null to allow creation
+        console.error('[WhatsApp] Fetch Instance Error:', error.response?.data || error.message);
+        return null;
+    }
+};
+
+/**
+ * Fetches all instances from UazAPI to find one by name and get its token.
+ * Uses globalApikey for authentication.
+ */
+export const fetchInstanceWithToken = async (instanceName: string): Promise<{ instanceName: string; instanceId: string; token: string; state: string } | null> => {
+    try {
+        console.log(`[WhatsApp] Fetching full instance data for "${instanceName}"...`);
+
+        // Use axios with globalApikey header
+        const response = await axios.get(`${cleanBaseUrl}/instance/fetchInstances`, {
+            headers: {
+                'apikey': SANITIZED_KEY
+            }
+        });
+        const instances = response.data || [];
+
+        console.log(`[WhatsApp] Found ${instances.length} total instances`);
+
+        // Find matching instance by name
+        const found = instances.find((inst: any) =>
+            inst.instance?.instanceName === instanceName ||
+            inst.instanceName === instanceName ||
+            inst.name === instanceName
+        );
+
+        if (found) {
+            const data = found.instance || found;
+            console.log('[WhatsApp] Instance matched:', data.instanceName);
+            return {
+                instanceName: data.instanceName || instanceName,
+                instanceId: data.instanceId || data.id || instanceName,
+                token: data.token || found.hash?.token || found.token || '',
+                state: data.state || data.status || 'unknown'
+            };
+        }
+
+        console.log(`[WhatsApp] Instance "${instanceName}" not found in fetchInstances`);
+        return null;
+    } catch (error: any) {
+        console.error('[WhatsApp] fetchInstanceWithToken Error:', error.response?.data || error.message);
+        return null;
+    }
+};
+
+/**
+ * Syncs an existing UazAPI instance with the database.
+ */
+export const syncInstanceToDatabase = async (studioId: string, instanceData: { instanceName: string; instanceId: string; token: string }): Promise<{ success: boolean }> => {
+    try {
+        console.log(`[WhatsApp] Syncing instance "${instanceData.instanceName}" to database for studio ${studioId}...`);
+
+        const { error } = await supabase
+            .from('studios')
+            .update({
+                whatsapp_instance_name: instanceData.instanceName,
+                whatsapp_instance_id: instanceData.instanceId,
+                whatsapp_token: instanceData.token,
+                whatsapp_status: 'connected'
+            })
+            .eq('id', studioId);
+
+        if (error) throw error;
+
+        console.log('[WhatsApp] Instance synced successfully!');
+        return { success: true };
+    } catch (error: any) {
+        console.error('[WhatsApp] Sync Error:', error.message);
+        return { success: false };
     }
 };
 
@@ -355,13 +473,36 @@ export const logoutInstance = async (instanceName: string, token: string) => {
     }
 };
 
+/**
+ * Updates the WhatsApp connection status in the database.
+ */
+export const updateInstanceStatus = async (studioId: string, status: 'connected' | 'disconnected' | 'connecting'): Promise<{ success: boolean }> => {
+    try {
+        const { error } = await supabase
+            .from('studios')
+            .update({ whatsapp_status: status })
+            .eq('id', studioId);
+
+        if (error) throw error;
+        console.log(`[WhatsApp] Database status updated to: ${status}`);
+        return { success: true };
+    } catch (error: any) {
+        console.error('[WhatsApp] Update Status Failed:', error.message);
+        return { success: false };
+    }
+};
+
 
 export const whatsappService = {
     createInstance,
     connectInstance,
-    getConnectionState, // Exported new function
+    getConnectionState,
+    fetchInstance,
+    fetchInstanceWithToken,
+    syncInstanceToDatabase,
+    updateInstanceStatus,
     sendMessage,
-    requestPairingCode, // Added export
+    requestPairingCode,
     provisionInstance,
     sendMassMessage,
     logoutInstance

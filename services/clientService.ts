@@ -92,52 +92,76 @@ export const clientService = {
         });
     },
 
-    // Create a new client
-    async createClient(clientData: any): Promise<{ success: boolean; data?: any; error?: any }> {
-        // Prepare data for DB (snake_case)
-        const { data: { user } } = await supabase.auth.getUser();
-
-        // Prepare data for DB (snake_case)
-        const dbData = {
-            first_name: clientData.firstName,
-            last_name: clientData.lastName,
-            full_name: `${clientData.firstName} ${clientData.lastName}`.trim(),
-            birth_date: clientData.birthDate || null,
-            cpf: clientData.cpf,
-            rg_passport: clientData.rg,        // Mapped from rg
-            profession: clientData.profession,
-            email: clientData.email,
-            phone: clientData.phone,
-            social_media: clientData.instagram, // Mapped from instagram
-
-            // Address Fields (Top Level)
-            cep: clientData.zipCode,
-            neighborhood: clientData.neighborhood,
-            city: clientData.city,
-            state: clientData.state,
-
-            // Address JSONB for extra fields
-            address: {
-                street: clientData.street,
-                number: clientData.number,
-                zip_code: clientData.zipCode
-            },
-
-            studio_id: clientData.studioId || user?.id // Should ideally be passed in
-        };
-
-        const { data, error } = await supabase
-            .from('clients')
-            .insert([dbData])
-            .select()
-            .single();
-
-        if (error) {
-            console.error('Error creating client:', error);
-            return { success: false, error };
+    // Create a new client - Uses Edge Function to ensure auth.users is created and email is sent
+    async createClient(clientData: any): Promise<{ success: boolean; data?: any; error?: any; message?: string }> {
+        // Validate required fields
+        if (!clientData.email) {
+            return { success: false, error: 'Email é obrigatório para criar cliente' };
         }
 
-        return { success: true, data };
+        if (!clientData.studioId) {
+            return { success: false, error: 'Studio ID é obrigatório' };
+        }
+
+        try {
+            // Call Edge Function to create user in auth.users + profiles + studio_members + clients
+            const { data, error } = await supabase.functions.invoke('invite-user', {
+                body: {
+                    email: clientData.email,
+                    type: 'client',
+                    role: 'CLIENT',
+                    studio_id: clientData.studioId,
+
+                    // Personal info
+                    fullName: `${clientData.firstName || ''} ${clientData.lastName || ''}`.trim() || clientData.name,
+                    firstName: clientData.firstName,
+                    lastName: clientData.lastName,
+                    phone: clientData.phone,
+                    cpf: clientData.cpf,
+                    rg: clientData.rg,
+                    birthDate: clientData.birthDate || null,
+                    profession: clientData.profession,
+                    instagram: clientData.instagram,
+
+                    // Address
+                    cep: clientData.zipCode,
+                    neighborhood: clientData.neighborhood,
+                    city: clientData.city,
+                    state: clientData.state,
+                    address: {
+                        street: clientData.street,
+                        number: clientData.number,
+                        zip_code: clientData.zipCode
+                    }
+                }
+            });
+
+            if (error) {
+                console.error('Error invoking invite-user function:', error);
+                return { success: false, error: error.message || 'Erro ao criar cliente' };
+            }
+
+            if (data?.error) {
+                console.error('Edge function returned error:', data.error);
+                return { success: false, error: data.error };
+            }
+
+            return {
+                success: true,
+                data: {
+                    id: data.clientId,
+                    userId: data.userId,
+                    isNewUser: data.isNewUser
+                },
+                message: data.message || (data.isNewUser
+                    ? 'Cliente criado! Um email foi enviado para definir a senha.'
+                    : 'Cliente adicionado ao estúdio!')
+            };
+
+        } catch (err: any) {
+            console.error('Error creating client:', err);
+            return { success: false, error: err.message || 'Erro inesperado ao criar cliente' };
+        }
     },
     async getClientById(id: string): Promise<Client | null> {
         const { data, error } = await supabase
