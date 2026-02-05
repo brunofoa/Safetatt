@@ -59,29 +59,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     useEffect(() => {
-        // Check active session
-        const initSession = async () => {
-            try {
-                const { data: { session } } = await supabase.auth.getSession();
-                setSession(session);
-                setUser(session?.user ?? null);
+        let isMounted = true;
+        let initialCheckDone = false;
 
-                // Fetch profile if user exists
-                if (session?.user) {
-                    const profileData = await fetchProfile(session.user.id);
-                    setProfile(profileData);
-                }
-            } catch (err) {
-                console.error('Error initializing session:', err);
-            } finally {
-                setLoading(false);
-            }
-        };
+        // Setup auth state change listener FIRST (it fires immediately with current state)
+        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+            if (!isMounted) return;
 
-        initSession();
+            console.log('[AuthContext] Auth state changed:', event, session ? 'has session' : 'no session');
 
-        // Listen for changes
-        const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
             setSession(session);
             setUser(session?.user ?? null);
 
@@ -89,23 +75,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (session?.user) {
                 try {
                     const profileData = await fetchProfile(session.user.id);
-                    setProfile(profileData);
+                    if (isMounted) setProfile(profileData);
                 } catch (err) {
                     console.error('Error fetching profile on auth change:', err);
                 }
             } else {
                 setProfile(null);
-            }
-
-            setLoading(false);
-            if (!session) {
                 setSessionRole(null);
                 setCurrentStudio(null);
             }
+
+            // Stop loading after first event (INITIAL_SESSION or other)
+            if (!initialCheckDone) {
+                initialCheckDone = true;
+                console.log('[AuthContext] Initial check done, setting loading to false');
+                if (isMounted) setLoading(false);
+            }
         });
 
-        return () => subscription.unsubscribe();
+        // Fallback: If no auth event fires within 5 seconds, stop loading anyway
+        const fallbackTimer = setTimeout(() => {
+            if (!initialCheckDone && isMounted) {
+                console.log('[AuthContext] Fallback timer: stopping loading');
+                initialCheckDone = true;
+                setLoading(false);
+            }
+        }, 5000);
+
+        return () => {
+            isMounted = false;
+            clearTimeout(fallbackTimer);
+            subscription.unsubscribe();
+        };
     }, []);
+
 
     const signInWithPassword = async (email: string, password: string) => {
         const { data, error } = await supabase.auth.signInWithPassword({

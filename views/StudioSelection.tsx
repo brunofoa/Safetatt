@@ -29,89 +29,151 @@ const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio,
   const [isAdmin, setIsAdmin] = useState(false);
   const [studios, setStudios] = useState<Studio[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userName, setUserName] = useState<string>(''); // Real user name from profile
+  const [userName, setUserName] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+
+  const handleRetry = () => {
+    setLoading(true);
+    setError(null);
+    setRetryCount(prev => prev + 1);
+  };
 
   useEffect(() => {
+    const userId = session?.user?.id;
+
+    if (!userId) {
+      // If we don't have a user yet, we wait.
+      // But we should have a timeout to not wait forever if session is broken
+      const authTimeout = setTimeout(() => {
+        if (loading) setLoading(false);
+      }, 3000);
+      return () => clearTimeout(authTimeout);
+    }
+
+    let isMounted = true;
+
     const fetchData = async () => {
-      if (!session?.user) return;
-      console.log('Fetching data for user:', session.user.id);
+      console.log('[StudioSelection] Fetching data for user:', userId);
 
       try {
-        // 1. Check Admin (Direct Query)
-        const { data: profile, error: profileError } = await supabase
+        // Create a timeout promise
+        const timeout = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('Tempo limite excedido. Verifique sua conexão.')), 5000);
+        });
+
+        // 1. Fetch Profile with timeout
+        console.log('[StudioSelection] Fetching profile...');
+        const profilePromise = supabase
           .from('profiles')
-          .select('is_platform_admin, full_name') // Fetch name too just in case
-          .eq('id', session.user.id)
+          .select('is_platform_admin, full_name')
+          .eq('id', userId)
           .single();
 
+        const { data: profile, error: profileError } = await Promise.race([profilePromise, timeout]) as any;
+
+        if (!isMounted) return;
+
         if (profileError) {
-          console.error('Profile fetch error:', profileError);
+          console.error('[StudioSelection] Profile fetch error:', profileError);
+          // Don't throw here, usually just means no profile or network error
+          // We can try to continue to studios
         } else {
-          // Set the real user name from profile
-          if (profile?.full_name) {
-            setUserName(profile.full_name);
-          }
-          if (profile?.is_platform_admin) {
-            console.log('User is admin');
-            setIsAdmin(true);
-          } else {
-            console.log('User is NOT admin', profile);
-          }
+          console.log('[StudioSelection] Profile fetched:', profile?.full_name);
+          if (profile?.full_name) setUserName(profile.full_name);
+          if (profile?.is_platform_admin) setIsAdmin(true);
         }
 
-        // 2. Fetch Studios (Manual Two-Step to avoid inner join RLS weirdness)
-        const { data: members, error: memberError } = await supabase
+        // 2. Fetch Studios with timeout
+        console.log('[StudioSelection] Fetching memberships...');
+        const membersPromise = supabase
           .from('studio_members')
           .select('studio_id, role')
-          .eq('profile_id', session.user.id);
+          .eq('profile_id', userId);
+
+        const { data: members, error: memberError } = await Promise.race([membersPromise, timeout]) as any;
+
+        if (!isMounted) return;
 
         if (memberError) {
-          console.error('Member fetch error:', memberError);
-          setLoading(false);
-          return;
+          throw memberError;
         }
+
+        console.log('[StudioSelection] Found memberships:', members?.length);
 
         if (members && members.length > 0) {
-          const studioIds = members.map(m => m.studio_id);
-          const { data: studiosData, error: studiosError } = await supabase
+          const studioIds = members.map((m: any) => m.studio_id);
+          const studiosPromise = supabase
             .from('studios')
-            .select('id, name, logo_url, contact_email, owner_id') // Ensure fields exist
+            .select('id, name, logo_url, contact_email, owner_id')
             .in('id', studioIds);
 
-          if (studiosError) {
-            console.error('Studios fetch error:', studiosError);
-          } else {
-            // Merge data
-            const finalStudios = studiosData?.map(s => {
-              const member = members.find(m => m.studio_id === s.id);
-              return {
-                id: s.id,
-                name: s.name,
-                logo: s.logo_url,
-                role: member?.role || 'CLIENT', // Fallback
-                owner: 'Studio',
-                memberCount: 0
-              } as Studio;
-            }) || [];
-            setStudios(finalStudios);
-          }
+          const { data: studiosData, error: studiosError } = await Promise.race([studiosPromise, timeout]) as any;
+
+          if (studiosError) throw studiosError;
+
+          const finalStudios = studiosData?.map((s: any) => {
+            const member = members.find((m: any) => m.studio_id === s.id);
+            return {
+              id: s.id,
+              name: s.name,
+              logo: s.logo_url,
+              role: member?.role || 'CLIENT',
+              owner: 'Studio',
+              memberCount: 0
+            } as Studio;
+          }) || [];
+
+          if (isMounted) setStudios(finalStudios);
         } else {
-          console.log('No memberships found');
-          setStudios([]);
+          if (isMounted) setStudios([]);
         }
 
-      } catch (err) {
-        console.error('Unexpected error in fetchData:', err);
+      } catch (err: any) {
+        console.error('[StudioSelection] Error:', err);
+        if (isMounted) {
+          setError(err?.message || 'Erro ao carregar estúdios. Tente novamente.');
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) setLoading(false);
       }
     };
 
     fetchData();
-  }, [session]);
+
+    return () => {
+      isMounted = false;
+    };
+  }, [session?.user?.id, retryCount]); // Re-run when session or retryCount changes
 
   // Use real name from profile, fallback to user prop name
   const displayName = userName || user.name || 'Usuário';
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background-dark flex flex-col items-center justify-center p-4">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary mb-4"></div>
+        <p className="text-slate-400">Carregando estúdios...</p>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-background-dark flex flex-col items-center justify-center p-4">
+        <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-6 max-w-md text-center">
+          <h3 className="text-xl font-bold text-red-500 mb-2">Erro de Conexão</h3>
+          <p className="text-slate-300 mb-6">{error}</p>
+          <button
+            onClick={handleRetry}
+            className="px-6 py-2 bg-primary hover:bg-primary-dark text-white rounded-md transition-colors"
+          >
+            Tentar Novamente
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-background-light dark:bg-background-dark min-h-screen">
@@ -120,6 +182,7 @@ const StudioSelection: React.FC<StudioSelectionProps> = ({ user, onSelectStudio,
       <main className="pt-32 pb-16 px-6 max-w-7xl mx-auto">
         <div className="mb-12">
           <h1 className="text-4xl font-extrabold tracking-tight mb-2">Bem-vindo de volta, {displayName.split(' ')[0]}</h1>
+
           <p className="text-slate-500 dark:text-slate-400">Selecione qual estúdio você gostaria de gerenciar ou visualizar hoje.</p>
         </div>
 

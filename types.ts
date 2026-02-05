@@ -22,7 +22,7 @@ export enum Screen {
   ADMIN_NEW_STUDIO = 'ADMIN_NEW_STUDIO'
 }
 
-export type Role = 'MASTER' | 'ARTIST' | 'CLIENT';
+export type Role = 'MASTER' | 'ARTIST' | 'PIERCER' | 'RECEPTIONIST' | 'CLIENT';
 
 export interface User {
   id: string;
